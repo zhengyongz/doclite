@@ -14,7 +14,7 @@ import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import {
-  Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak,
+  Document, Packer, Paragraph, TextRun, PageBreak,
 } from 'docx'
 
 // ---------- 通用：触发浏览器下载 ----------

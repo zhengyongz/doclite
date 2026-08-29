@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useFileStore } from '../../context/FileContext'
 
 // Configure pdf.js worker (Vite handles the URL import)
@@ -10,8 +10,6 @@ export default function PdfRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
   const [pages, setPages] = useState([])      // array of canvasDataURLs
   const [loading, setLoading] = useState(true)
-  const [pageInfos, setPageInfos] = useState([])
-  const containerRef = useRef(null)
 
   const renderPdf = useCallback(async () => {
     if (!currentFile?.file) return
@@ -24,7 +22,6 @@ export default function PdfRenderer() {
       const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
       const renderedPages = []
-      const infos = []
 
       for (let i = 1; i <= pdfDoc.numPages; i++) {
         const page = await pdfDoc.getPage(i)
@@ -40,11 +37,9 @@ export default function PdfRenderer() {
         }).promise
 
         renderedPages.push(canvas.toDataURL('image/png'))
-        infos.push({ width: viewport.width, height: viewport.height })
       }
 
       setPages(renderedPages)
-      setPageInfos(infos)
       setLoading(false)
       setPreviewStatus('ready')
     } catch (err) {
@@ -70,10 +65,7 @@ export default function PdfRenderer() {
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="h-full overflow-auto p-3 lg:p-4"
-    >
+    <div className="h-full overflow-auto p-3 lg:p-4">
       <div className="flex flex-col items-center gap-3">
         {pages.map((dataUrl, i) => (
           <img

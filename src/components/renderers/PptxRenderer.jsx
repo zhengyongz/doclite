@@ -68,7 +68,6 @@ export default function PptxRenderer() {
         // rId is in <a:blip r:embed="rId2"/>
         const picRegex = /<p:pic\b[\s\S]*?<\/p:pic>/g
         const blipRegex = /r:embed="(rId\d+)"/
-        const extRegex = /<p:ext\b[^>]*>[\s\S]*?<\/p:ext>/  // non-greedy first match
         // Offsets: <p:off x="123" y="456"/> Extents: <p:ext cx="789" cy="012"/>
         const offRegex = /<p:off\s+x="(-?\d+)"\s+y="(-?\d+)"/
         const extSizeRegex = /<p:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/
