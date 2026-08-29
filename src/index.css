@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Base resets ---------- */
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100vh;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ---------- Scrollbar (webkit) ---------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD0DC;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9BA3B5;
+}
+
+/* ---------- File drop overlay ---------- */
+.drop-active {
+  outline: 2px dashed #3B76F5;
+  outline-offset: -2px;
+  background: rgba(59, 118, 245, 0.04);
+}
+
+/* ---------- Preview viewport ---------- */
+.preview-viewport {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------- Focus ring ---------- */
+.focus-ring:focus-visible {
+  outline: 2px solid #3B76F5;
+  outline-offset: 2px;
+}
