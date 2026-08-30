@@ -92,7 +92,8 @@ export default function ConvertPanel() {
 
     try {
       await convertFile(currentFile.file, ext, key, (current, total) => {
-        setConvertProgress(`${current} / ${total}`)
+        const percent = Math.round((current / total) * 100)
+        setConvertProgress(`${percent}%`)
       })
     } catch (err) {
       console.error('[ConvertPanel] conversion error:', err)

@@ -101,7 +101,7 @@ export default function UploadZone() {
           拖拽文件到此处，或<span className="text-accent-600">点击上传</span>
         </p>
         <p className="text-xs text-ink-400">
-          支持 .docx / .xlsx / .pptx / .pdf，最大 50 MB
+          支持 .docx / .xlsx / .pptx / .pdf，最大 100 MB
         </p>
         <input
           id={inputId}

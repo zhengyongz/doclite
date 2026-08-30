@@ -14,7 +14,7 @@ import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import {
-  Document, Packer, Paragraph, TextRun, PageBreak,
+  Document, Packer, Paragraph, TextRun, PageBreak, ImageRun,
 } from 'docx'
 
 // ---------- 通用：触发浏览器下载 ----------
@@ -329,48 +329,48 @@ export async function pptxToPdf(file, filename) {
 
 /**
  * PDF → Word (.docx)
- * 用 pdfjs 提取每页文本，用 docx 包生成 Word 文档。
+ * 用 pdfjs 提取每页文本和图片，按位置穿插排列，用 docx 包生成 Word 文档。
  */
-export async function pdfToDocx(file, filename) {
+export async function pdfToDocx(file, filename, onProgress = null) {
   const arrayBuffer = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
   const paragraphs = []
 
   for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i)
+    const page = await pdfjsLibGetPage(pdfDoc, i)
+    const viewport = page.getViewport({ scale: 1.0 })
+
+    // ---- 提取文字行 ----
     const textContent = await page.getTextContent()
-
-    // 将 text items 按行分组（y 坐标相近的归为同一行）
-    const lines = []
-    let currentLine = []
-    let lastY = null
-
+    const textItems = []
     for (const item of textContent.items) {
-      const transform = item.transform
-      const y = Math.round(transform[5])
-      if (lastY === null || Math.abs(y - lastY) < 3) {
-        currentLine.push(item.str)
-      } else {
-        if (currentLine.length > 0) {
-          lines.push(currentLine.join(''))
-        }
-        currentLine = [item.str]
-      }
-      lastY = y
+      if (!item.str || !item.str.trim()) continue
+      const y = Math.round(item.transform[5])
+      textItems.push({ type: 'text', y, str: item.str })
     }
-    if (currentLine.length > 0) {
-      lines.push(currentLine.join(''))
-    }
+    // 按行分组（y 坐标相近的归为同一行）
+    const textLines = groupTextByLine(textItems)
 
-    // 每页之前插入分页符（第一页除外）
+    // ---- 提取图片 ----
+    const imageItems = await extractPageImages(page)
+
+    // ---- 合并文字行和图片，按 Y 坐标从上到下排列 ----
+    // PDF 坐标系 y 轴向上，所以 y 值越大越靠上，需要反转
+    const allItems = [
+      ...textLines.map(l => ({ type: 'text', y: l.y, str: l.str })),
+      ...imageItems.map(img => ({ type: 'image', y: img.y, ...img })),
+    ]
+    allItems.sort((a, b) => b.y - a.y) // y 大的在前（页面上方）
+
+    // 分页符
     if (i > 1) {
       paragraphs.push(new Paragraph({
         children: [new PageBreak()],
       }))
     }
 
-    // 添加页面标题
+    // 页面标题
     paragraphs.push(new Paragraph({
       children: [new TextRun({
         text: `— 第 ${i} 页 —`,
@@ -381,19 +381,44 @@ export async function pdfToDocx(file, filename) {
       spacing: { after: 200 },
     }))
 
-    // 将每行文本转为段落
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed) {
-        paragraphs.push(new Paragraph({
-          children: [new TextRun({ text: trimmed, size: 22 })],
-          spacing: { after: 120 },
-        }))
-      } else {
-        // 空行
-        paragraphs.push(new Paragraph({}))
+    // 按顺序输出文字段落和图片
+    for (const item of allItems) {
+      if (item.type === 'text') {
+        const trimmed = item.str.trim()
+        if (trimmed) {
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text: trimmed, size: 22 })],
+            spacing: { after: 120 },
+          }))
+        } else {
+          paragraphs.push(new Paragraph({}))
+        }
+      } else if (item.type === 'image' && item.dataUrl) {
+        // 将压缩后的图片插入 Word 文档
+        try {
+          const compressed = await compressImageDataUrl(item.dataUrl, 600)
+          paragraphs.push(new Paragraph({
+            children: [new ImageRun({
+              data: compressed.buffer,
+              transformation: { width: compressed.width, height: compressed.height },
+              type: 'jpg',
+            })],
+            spacing: { before: 120, after: 120 },
+            alignment: 'center',
+          }))
+        } catch (e) {
+          console.warn(`[pdfToDocx] 图片插入失败 (page ${i}):`, e)
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text: '[图片]', color: '999999', italics: true })],
+            spacing: { after: 120 },
+            alignment: 'center',
+          }))
+        }
       }
     }
+
+    // 进度回调
+    if (onProgress) onProgress(i, pdfDoc.numPages)
   }
 
   const doc = new Document({
@@ -405,6 +430,189 @@ export async function pdfToDocx(file, filename) {
 
   const blob = await Packer.toBlob(doc)
   downloadBlob(blob, filename)
+}
+
+// ---- 辅助函数 ----
+
+/** 包装 getPage 以保持一致的接口 */
+async function pdfjsLibGetPage(pdfDoc, pageNum) {
+  return pdfDoc.getPage(pageNum)
+}
+
+/** 将文字 items 按 Y 坐标分组成行 */
+function groupTextByLine(textItems) {
+  if (textItems.length === 0) return []
+  // 按从上到下排序（y 大的在前）
+  const sorted = [...textItems].sort((a, b) => b.y - a.y)
+  const lines = []
+  let currentLine = [sorted[0]]
+  let lastY = sorted[0].y
+
+  for (let i = 1; i < sorted.length; i++) {
+    const item = sorted[i]
+    if (Math.abs(item.y - lastY) < 3) {
+      currentLine.push(item)
+    } else {
+      // 同一行内按 x 坐标排序
+      currentLine.sort((a, b) => (a.x || 0) - (b.x || 0))
+      lines.push({ y: lastY, str: currentLine.map(t => t.str).join('') })
+      currentLine = [item]
+      lastY = item.y
+    }
+  }
+  if (currentLine.length > 0) {
+    currentLine.sort((a, b) => (a.x || 0) - (b.x || 0))
+    lines.push({ y: lastY, str: currentLine.map(t => t.str).join('') })
+  }
+  return lines
+}
+
+/** 从 PDF 页面提取图片对象 */
+async function extractPageImages(page) {
+  const images = []
+  try {
+    const operatorList = await page.getOperatorList()
+    const OPS = pdfjsLib.OPS
+    const fnArray = operatorList.fnArray
+    const argsArray = operatorList.argsArray
+
+    for (let j = 0; j < fnArray.length; j++) {
+      // OPS.paintImageXObject / paintImageXObjectRepeat / paintInlineImageXObject
+      if (fnArray[j] === OPS.paintImageXObject ||
+          fnArray[j] === OPS.paintImageXObjectRepeat) {
+        const args = argsArray[j]
+        const imgName = args[0] // 图片在页面对象中的 key
+        let imgObj = null
+
+        // 尝试从 page.objs 获取图片对象
+        if (page.objs && page.objs.has && page.objs.has(imgName)) {
+          imgObj = await new Promise(resolve => page.objs.get(imgName, resolve))
+        }
+
+        if (imgObj && imgObj.bitmap) {
+          // 图片是 ImageBitmap
+          const canvas = document.createElement('canvas')
+          canvas.width = imgObj.width
+          canvas.height = imgObj.height
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(imgObj.bitmap, 0, 0)
+          images.push({
+            y: args[2] || 0, // transform 的 y 坐标
+            dataUrl: canvas.toDataURL('image/png'),
+            width: imgObj.width,
+            height: imgObj.height,
+            format: 'png',
+          })
+        } else if (imgObj && imgObj.data) {
+          // 图片是原始像素数据
+          const canvas = document.createElement('canvas')
+          canvas.width = imgObj.width
+          canvas.height = imgObj.height
+          const ctx = canvas.getContext('2d')
+          const imageData = ctx.createImageData(imgObj.width, imgObj.height)
+
+          if (imgObj.data.length === imgObj.width * imgObj.height * 4) {
+            // RGBA
+            imageData.data.set(imgObj.data)
+          } else if (imgObj.data.length === imgObj.width * imgObj.height * 3) {
+            // RGB → RGBA
+            const src = imgObj.data
+            const dst = imageData.data
+            for (let k = 0; k < imgObj.width * imgObj.height; k++) {
+              dst[k * 4] = src[k * 3]
+              dst[k * 4 + 1] = src[k * 3 + 1]
+              dst[k * 4 + 2] = src[k * 3 + 2]
+              dst[k * 4 + 3] = 255
+            }
+          } else if (imgObj.data instanceof Uint8ClampedArray) {
+            imageData.data.set(imgObj.data)
+          }
+
+          ctx.putImageData(imageData, 0, 0)
+          images.push({
+            y: args[2] || 0,
+            dataUrl: canvas.toDataURL('image/png'),
+            width: imgObj.width,
+            height: imgObj.height,
+            format: 'png',
+          })
+        }
+      } else if (fnArray[j] === OPS.paintInlineImageXObject) {
+        // 内联图片
+        const args = argsArray[j]
+        const imgData = args[0]
+        if (imgData && imgData.data) {
+          const canvas = document.createElement('canvas')
+          canvas.width = imgData.width
+          canvas.height = imgData.height
+          const ctx = canvas.getContext('2d')
+          const imageData = ctx.createImageData(imgData.width, imgData.height)
+
+          if (imgData.data.length === imgData.width * imgData.height * 4) {
+            imageData.data.set(imgData.data)
+          } else if (imgData.data.length === imgData.width * imgData.height * 3) {
+            const src = imgData.data
+            const dst = imageData.data
+            for (let k = 0; k < imgData.width * imgData.height; k++) {
+              dst[k * 4] = src[k * 3]
+              dst[k * 4 + 1] = src[k * 3 + 1]
+              dst[k * 4 + 2] = src[k * 3 + 2]
+              dst[k * 4 + 3] = 255
+            }
+          }
+          ctx.putImageData(imageData, 0, 0)
+          images.push({
+            y: 0,
+            dataUrl: canvas.toDataURL('image/png'),
+            width: imgData.width,
+            height: imgData.height,
+            format: 'png',
+          })
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[extractPageImages] 提取图片失败:`, e)
+  }
+
+  return images
+}
+
+/** 将 dataURL 转为 Uint8Array（docx ImageRun 需要的格式） */
+function dataUrlToBuffer(dataUrl) {
+  const base64 = dataUrl.split(',')[1]
+  const binaryString = atob(base64)
+  const len = binaryString.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+/** 压缩图片：缩放到 maxWidth 并转为 JPEG（质量 0.7），大幅减小体积 */
+async function compressImageDataUrl(dataUrl, maxWidth = 600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width)
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, w, h)
+      const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.7)
+      resolve({
+        buffer: dataUrlToBuffer(jpegDataUrl),
+        width: w,
+        height: h,
+      })
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
 }
 
 // =========================================================================
@@ -490,7 +698,7 @@ export async function convertFile(file, ext, targetFormat, onProgress = null) {
     }
   } else if (targetFormat === 'to-docx') {
     const outName = `${baseName}.docx`
-    await pdfToDocx(file, outName)
+    await pdfToDocx(file, outName, onProgress)
   } else if (targetFormat === 'to-png') {
     const outName = file.name
     await pdfToPng(file, outName, onProgress)

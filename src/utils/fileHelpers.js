@@ -8,7 +8,7 @@ export const MIME_MAP = {
   'application/pdf': '.pdf',
 }
 
-export const MAX_FILE_SIZE_MB = 50
+export const MAX_FILE_SIZE_MB = 100
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 // Format display metadata
