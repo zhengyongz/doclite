@@ -5,6 +5,12 @@ node_modules/
 dist/
 dist-ssr/
 
+# Electron build output
+release/
+
+# .deb packages
+*.deb
+
 # Temporary files (test scripts, generated test files)
 .temp/
 
