@@ -456,14 +456,24 @@ function groupTextByLine(textItems) {
     } else {
       // 同一行内按 x 坐标排序
       currentLine.sort((a, b) => (a.x || 0) - (b.x || 0))
-      lines.push({ y: lastY, str: currentLine.map(t => t.str).join('') })
+      lines.push({
+        y: lastY,
+        str: currentLine.map(t => t.str).join(''),
+        size: Math.max(...currentLine.map(t => t.size || 0)),
+        x: Math.min(...currentLine.map(t => t.x ?? 1e9)),
+      })
       currentLine = [item]
       lastY = item.y
     }
   }
   if (currentLine.length > 0) {
     currentLine.sort((a, b) => (a.x || 0) - (b.x || 0))
-    lines.push({ y: lastY, str: currentLine.map(t => t.str).join('') })
+    lines.push({
+      y: lastY,
+      str: currentLine.map(t => t.str).join(''),
+      size: Math.max(...currentLine.map(t => t.size || 0)),
+      x: Math.min(...currentLine.map(t => t.x ?? 1e9)),
+    })
   }
   return lines
 }
@@ -498,7 +508,8 @@ async function extractPageImages(page) {
           const ctx = canvas.getContext('2d')
           ctx.drawImage(imgObj.bitmap, 0, 0)
           images.push({
-            y: args[2] || 0, // transform 的 y 坐标
+            y: args[1] || 0, // transform 的 y（图片左上角，PDF 坐标系 y 向上）
+            x: args[0] || 0,
             dataUrl: canvas.toDataURL('image/png'),
             width: imgObj.width,
             height: imgObj.height,
@@ -531,7 +542,8 @@ async function extractPageImages(page) {
 
           ctx.putImageData(imageData, 0, 0)
           images.push({
-            y: args[2] || 0,
+            y: args[1] || 0,
+            x: args[0] || 0,
             dataUrl: canvas.toDataURL('image/png'),
             width: imgObj.width,
             height: imgObj.height,
@@ -686,23 +698,67 @@ function escapeXml(str) {
     .replace(/'/g, '&apos;')
 }
 
+/** 图片对象 → JPEG Uint8Array（控制体积，maxWidth 缩放） */
+async function imageToJpegBytes(dataUrl, maxWidth = 900, quality = 0.75) {
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = reject
+    el.src = dataUrl
+  })
+  const scale = Math.min(1, maxWidth / img.width)
+  const w = Math.round(img.width * scale)
+  const h = Math.round(img.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(img, 0, 0, w, h)
+  const jpegUrl = canvas.toDataURL('image/jpeg', quality)
+  return { bytes: dataUrlToBuffer(jpegUrl), width: w, height: h }
+}
+
+/**
+ * 判断一行文本是否为章节标题（启发式）
+ * - 长度适中（≤ 30 字符）
+ * - 不含句末标点（。！？；）
+ * - 非纯数字/页码
+ * - 或字号显著大于同行
+ */
+function looksLikeHeading(line) {
+  const s = line.str.trim()
+  if (!s || s.length > 30) return false
+  if (/^[\d\s·.—-]+$/.test(s)) return false
+  if (/[。！？；：，,]$/.test(s)) return false
+  if (/^第[一二三四五六七八九十百千万\d]+[章节卷部篇]/.test(s)) return true
+  if (line.size && line.size > 16) return true
+  return false
+}
+
 /**
  * PDF → AZW3 (.mobi)
- * 用 pdfjs 提取每页文本，转成 XHTML，用 mobiWriter 生成 MOBI6 格式电子书。
+ * 用 pdfjs 提取每页文本和图片，按位置排列，转成 XHTML，
+ * 用 mobiWriter 生成 MOBI6 格式电子书（含图片资源与章节目录）。
  * 输出 .azw3 扩展名（实际为 MOBI6 容器，Kindle 与 foliate-js 均可识别）。
  */
 export async function pdfToAzw3(file, filename, onProgress = null) {
   const arrayBuffer = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
-  // 每页生成一段 XHTML，用 mbp:pagebreak 分页
-  const chunks = []
+  const pageChunks = []   // 每页的 XHTML 片段
+  const images = []       // 资源图片 [{ data: Uint8Array, width, height }]
 
+  // 逐页处理
   for (let i = 1; i <= pdfDoc.numPages; i++) {
     const page = await pdfDoc.getPage(i)
-    const textContent = await page.getTextContent()
+    const viewport = page.getViewport({ scale: 1.0 })
+    const pageWidth = viewport.width
+    const pageHeight = viewport.height
 
-    // 按 y 坐标分组为行，行内按 x 排序，得到有序文本
+    // ---- 文字行 ----
+    const textContent = await page.getTextContent()
     const textItems = []
     for (const item of textContent.items) {
       if (!item.str || !item.str.trim()) continue
@@ -710,30 +766,124 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
         y: Math.round(item.transform[5]),
         x: item.transform[4],
         str: item.str,
+        size: item.height || 0,
       })
     }
-    const lines = groupTextByLine(textItems)
+    const textLines = groupTextByLine(textItems)
 
-    // 组装 XHTML 片段
-    let html = `<h2 class="page-title">第 ${i} 页</h2>\n`
-    for (const line of lines) {
-      const trimmed = line.str.trim()
-      if (trimmed) {
-        html += `<p>${escapeXml(trimmed)}</p>\n`
+    // ---- 图片 ----
+    const imageItems = await extractPageImages(page)
+    const imageRefs = []
+    for (const img of imageItems) {
+      try {
+        const { bytes, width, height } = await imageToJpegBytes(img.dataUrl)
+        const recindex = images.length + 1
+        images.push({ data: bytes, width, height })
+        imageRefs.push({
+          y: img.y,
+          x: img.x,
+          recindex,
+          width,
+          height,
+          pageWidth,
+          pageHeight,
+        })
+      } catch (e) {
+        console.warn(`[pdfToAzw3] 图片提取失败 (page ${i}):`, e)
       }
     }
-    // 每页之间加分页符（最后一页不加）
-    if (i < pdfDoc.numPages) {
-      html += '<mbp:pagebreak/>\n'
+
+    // ---- 合并文字与图片，按 y 从大到小排列 ----
+    const allItems = [
+      ...textLines.map(l => ({ type: 'text', y: l.y, x: l.x, str: l.str, size: l.size })),
+      ...imageRefs.map(img => ({ type: 'image', y: img.y, x: img.x, ...img })),
+    ]
+    allItems.sort((a, b) => b.y - a.y)
+
+    // ---- 组装 XHTML ----
+    let html = ''
+    for (const item of allItems) {
+      if (item.type === 'text') {
+        const trimmed = item.str.trim()
+        if (!trimmed) continue
+        if (looksLikeHeading(item)) {
+          html += `<h3>${escapeXml(trimmed)}</h3>\n`
+        } else {
+          html += `<p>${escapeXml(trimmed)}</p>\n`
+        }
+      } else if (item.type === 'image') {
+        // 图片按页面宽度比例缩放到 100%
+        html += `<p class="ebook-img"><img recindex="${item.recindex}" width="100%" alt=""/></p>\n`
+      }
     }
-    chunks.push(html)
+
+    pageChunks.push({ pageIndex: i, html })
 
     if (onProgress) onProgress(i, pdfDoc.numPages)
   }
 
+  // ---------- 构建正文 ----------
+  // 每页之间用 <mbp:pagebreak/> 分隔
+  const enc2 = new TextEncoder()
+  const bodyParts = []
+  for (const crop of pageChunks) {
+    bodyParts.push(crop.html)
+    if (crop.pageIndex < pdfDoc.numPages) {
+      bodyParts.push('<mbp:pagebreak/>\n')
+    }
+  }
+  let bodyText = bodyParts.join('')
+
+  // ---------- 识别标题并计算 filepos ----------
+  // 注意：filepos 是相对「第一条文本记录起点」的字节偏移。
+  // 由于目录页会放在正文之前，标题的真实 filepos = bodyText 内偏移 + 目录页字节长度。
+  // 目录页长度只取决于标题（filepos 固定 10 位数字），与具体值无关，可先算出。
+  const scanHeadings = (text) => {
+    const result = []
+    const re = /<h\d>([^<]+)<\/h\d>/g
+    let mm
+    while ((mm = re.exec(text)) !== null) {
+      result.push({
+        title: mm[1],
+        filepos: enc2.encode(text.slice(0, mm.index)).length,
+      })
+    }
+    return result
+  }
+
+  let headings = scanHeadings(bodyText)
+
+  // 如果正文没有标题，用「第 N 页」作为回退目录
+  if (headings.length === 0) {
+    let acc = 0
+    headings = pageChunks.map((c, i) => {
+      const pos = acc
+      acc += enc2.encode(c.html).length
+      if (i < pageChunks.length - 1) acc += enc2.encode('<mbp:pagebreak/>\n').length
+      return { title: `第 ${i + 1} 页`, filepos: pos }
+    })
+  }
+
+  // ---------- 构建目录页（两轮：先定长度，再定偏移） ----------
+  const buildTocPage = (list) => {
+    const items = list
+      .map(h => `<a filepos="${String(h.filepos).padStart(10, '0')}">${escapeXml(h.title)}</a>`)
+      .join('<br/>\n')
+    return `<html><head><guide><reference type="toc" title="目录" filepos="0000000000"/></guide></head><body>\n<h1>目录</h1>\n${items}\n<mbp:pagebreak/>\n</body></html>`
+  }
+
+  // 第一遍：用占位 filepos 生成目录页，测出其字节长度
+  const placeholderToc = buildTocPage(headings.map(h => ({ ...h, filepos: 0 })))
+  const tocLen = enc2.encode(placeholderToc).length
+
+  // 第二遍：最终偏移 = 正文内偏移 + 目录页长度
+  const finalHeadings = headings.map(h => ({ ...h, filepos: h.filepos + tocLen }))
+  const tocPage = buildTocPage(finalHeadings)
+
+  // ---------- 组装最终文本 ----------
+  const finalText = tocPage + bodyText
   const title = stripExt(file.name)
-  const body = chunks.join('\n')
-  const mobi = createMobi({ title, text: body })
+  const mobi = createMobi({ title, text: finalText, images })
   const blob = new Blob([mobi], { type: 'application/x-mobipocket-ebook' })
   downloadBlob(blob, `${title}.azw3`)
 }

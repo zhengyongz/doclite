@@ -54,11 +54,13 @@ function splitRecords(text, recordSize) {
  *
  * @param {Object} opts
  * @param {string} opts.title - 书名
- * @param {string} opts.text - XHTML 正文（含 <mbp:pagebreak/> 分页标记）
+ * @param {string} opts.text - XHTML 正文（含 <mbp:pagebreak/> 分页标记，正文可含 <a filepos> 目录链接）
+ * @param {Array}  opts.images - 可选，资源图片数组 [{ data: Uint8Array, mime: string }]
+ *                               正文中通过 <img recindex="i">（i 从 1 开始）引用
  * @returns {Uint8Array} 完整 .azw3/.mobi 二进制
  */
 export function createMobi(opts) {
-  const { title = 'Untitled', text = '' } = opts
+  const { title = 'Untitled', text = '', images = [] } = opts
 
   // ---------- 1. 准备文本记录 ----------
   const RECORD_SIZE = 4096
@@ -76,7 +78,11 @@ export function createMobi(opts) {
 
   // ---------- 3. 计算 PDB 布局 ----------
   // 记录偏移表
-  const numRecords = 1 + numTextRecords
+  // Record 0: PalmDOC+MOBI头+标题
+  // Record 1..numTextRecords: 文本记录
+  // Record numTextRecords+1..: 资源记录（图片）
+  const numRecords = 1 + numTextRecords + images.length
+  const resourceStart = 1 + numTextRecords // 第一个资源记录的记录号
   const pdbHeaderSize = 78 + numRecords * 8
   const recordOffsets = []
   let currentOffset = pdbHeaderSize
@@ -87,6 +93,11 @@ export function createMobi(opts) {
   for (let i = 0; i < numTextRecords; i++) {
     recordOffsets.push(currentOffset)
     currentOffset += records[i].length
+  }
+
+  for (let i = 0; i < images.length; i++) {
+    recordOffsets.push(currentOffset)
+    currentOffset += images[i].data.length
   }
 
   // ---------- 4. 组装二进制 ----------
@@ -137,7 +148,10 @@ export function createMobi(opts) {
   buf[r0 + 94] = 0 // localeRegion
   buf[r0 + 95] = 4 // localeLanguage = zh
 
-  // 其他字段保持 0（如 resourceStart, huffcdic 等）
+  // resourceStart（相对 record 0 的记录号），foliate-js 从偏移 108 读取
+  writeUint32(buf, r0 + 108, resourceStart)
+
+  // 其他字段保持 0（如 huffcdic 等）
 
   // ---- 标题文本（写在 record 0 的 MOBI 头之后） ----
   for (let i = 0; i < titleBytes.length; i++) {
@@ -147,6 +161,11 @@ export function createMobi(opts) {
   // ---- 文本记录 ----
   for (let i = 0; i < numTextRecords; i++) {
     buf.set(records[i], recordOffsets[1 + i])
+  }
+
+  // ---- 资源记录（图片） ----
+  for (let i = 0; i < images.length; i++) {
+    buf.set(images[i].data, recordOffsets[1 + numTextRecords + i])
   }
 
   return buf
