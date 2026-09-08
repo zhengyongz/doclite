@@ -4,6 +4,7 @@ import XlsxRenderer from './renderers/XlsxRenderer'
 import DocxRenderer from './renderers/DocxRenderer'
 import PdfRenderer from './renderers/PdfRenderer'
 import PptxRenderer from './renderers/PptxRenderer'
+import Azw3Renderer from './renderers/Azw3Renderer'
 
 export default function PreviewViewport() {
   const { currentFile, zoomLevel } = useFileStore()
@@ -23,6 +24,9 @@ export default function PreviewViewport() {
         return <PdfRenderer />
       case '.pptx':
         return <PptxRenderer />
+      case '.azw3':
+      case '.mobi':
+        return <Azw3Renderer />
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">

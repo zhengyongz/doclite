@@ -13,6 +13,7 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
+import { createMobi } from './mobiWriter'
 import {
   Document, Packer, Paragraph, TextRun, PageBreak, ImageRun,
 } from 'docx'
@@ -670,6 +671,74 @@ export async function pdfToPng(file, filename, onProgress = null) {
 }
 
 // =========================================================================
+//  PDF → AZW3 / MOBI（电子书）
+// =========================================================================
+
+/**
+ * XML 转义（MOBI 文本是 XHTML，需转义 < > & 等）
+ */
+function escapeXml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+/**
+ * PDF → AZW3 (.mobi)
+ * 用 pdfjs 提取每页文本，转成 XHTML，用 mobiWriter 生成 MOBI6 格式电子书。
+ * 输出 .azw3 扩展名（实际为 MOBI6 容器，Kindle 与 foliate-js 均可识别）。
+ */
+export async function pdfToAzw3(file, filename, onProgress = null) {
+  const arrayBuffer = await file.arrayBuffer()
+  const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+
+  // 每页生成一段 XHTML，用 mbp:pagebreak 分页
+  const chunks = []
+
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i)
+    const textContent = await page.getTextContent()
+
+    // 按 y 坐标分组为行，行内按 x 排序，得到有序文本
+    const textItems = []
+    for (const item of textContent.items) {
+      if (!item.str || !item.str.trim()) continue
+      textItems.push({
+        y: Math.round(item.transform[5]),
+        x: item.transform[4],
+        str: item.str,
+      })
+    }
+    const lines = groupTextByLine(textItems)
+
+    // 组装 XHTML 片段
+    let html = `<h2 class="page-title">第 ${i} 页</h2>\n`
+    for (const line of lines) {
+      const trimmed = line.str.trim()
+      if (trimmed) {
+        html += `<p>${escapeXml(trimmed)}</p>\n`
+      }
+    }
+    // 每页之间加分页符（最后一页不加）
+    if (i < pdfDoc.numPages) {
+      html += '<mbp:pagebreak/>\n'
+    }
+    chunks.push(html)
+
+    if (onProgress) onProgress(i, pdfDoc.numPages)
+  }
+
+  const title = stripExt(file.name)
+  const body = chunks.join('\n')
+  const mobi = createMobi({ title, text: body })
+  const blob = new Blob([mobi], { type: 'application/x-mobipocket-ebook' })
+  downloadBlob(blob, `${title}.azw3`)
+}
+
+// =========================================================================
 //  转换调度器
 // =========================================================================
 
@@ -702,6 +771,9 @@ export async function convertFile(file, ext, targetFormat, onProgress = null) {
   } else if (targetFormat === 'to-png') {
     const outName = file.name
     await pdfToPng(file, outName, onProgress)
+  } else if (targetFormat === 'to-azw3') {
+    const outName = `${baseName}.azw3`
+    await pdfToAzw3(file, outName, onProgress)
   } else {
     throw new Error(`未知的转换目标: ${targetFormat}`)
   }

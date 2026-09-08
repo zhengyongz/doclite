@@ -1,11 +1,13 @@
 // ---------- Supported formats ----------
-export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.pptx', '.pdf']
+export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.pptx', '.pdf', '.azw3', '.mobi']
 
 export const MIME_MAP = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
   'application/pdf': '.pdf',
+  'application/x-mobipocket-ebook': '.azw3',
+  'application/vnd.amazon.ebook': '.azw3',
 }
 
 export const MAX_FILE_SIZE_MB = 100
@@ -17,6 +19,8 @@ export const FORMAT_META = {
   '.xlsx': { label: 'Excel', color: 'bg-green-100 text-green-700' },
   '.pptx': { label: 'PPT',   color: 'bg-orange-100 text-orange-700' },
   '.pdf':  { label: 'PDF',   color: 'bg-red-100 text-red-700' },
+  '.azw3': { label: 'AZW3',  color: 'bg-purple-100 text-purple-700' },
+  '.mobi': { label: 'MOBI',  color: 'bg-amber-100 text-amber-700' },
 }
 
 // ---------- Helpers ----------

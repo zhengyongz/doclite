@@ -37,7 +37,7 @@ export default function UploadZone() {
   const inputId = 'file-upload-input'
 
   // Accept string for <input>
-  const acceptStr = '.docx,.xlsx,.pptx,.pdf'
+  const acceptStr = '.docx,.xlsx,.pptx,.pdf,.azw3,.mobi'
 
   const handleFile = useCallback((file) => {
     const err = validateFile(file)
@@ -101,7 +101,7 @@ export default function UploadZone() {
           拖拽文件到此处，或<span className="text-accent-600">点击上传</span>
         </p>
         <p className="text-xs text-ink-400">
-          支持 .docx / .xlsx / .pptx / .pdf，最大 100 MB
+          支持 .docx / .xlsx / .pptx / .pdf / .azw3 / .mobi，最大 100 MB
         </p>
         <input
           id={inputId}

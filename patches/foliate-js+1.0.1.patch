@@ -1,0 +1,26 @@
+diff --git a/node_modules/foliate-js/mobi.js b/node_modules/foliate-js/mobi.js
+index 116477d..05b8242 100644
+--- a/node_modules/foliate-js/mobi.js
++++ b/node_modules/foliate-js/mobi.js
+@@ -538,7 +538,20 @@ export class MOBI extends PDB {
+             }
+         }
+         await this.#setup()
+-        return isKF8 ? new KF8(this).init() : new MOBI6(this).init()
++        if (isKF8) {
++            try {
++                return await new KF8(this).init()
++            } catch (e) {
++                console.warn(e)
++                console.warn('Failed to open KF8; falling back to MOBI')
++                // 部分 combo 文件的 KF8 部分不完整（如 skel 索引为空），回退到 MOBI6
++                this.headers = this.#getHeaders(await super.loadRecord(0))
++                this.#start = 0
++                await this.#setup()
++                return await new MOBI6(this).init()
++            }
++        }
++        return new MOBI6(this).init()
+     }
+     #getHeaders(buf) {
+         const palmdoc = getStruct(PALMDOC_HEADER, buf)

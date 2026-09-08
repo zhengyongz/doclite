@@ -34,6 +34,15 @@ function WordIcon({ className }) {
   )
 }
 
+function BookIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+    </svg>
+  )
+}
+
 function SpinnerIcon({ className }) {
   return (
     <svg className={`${className} animate-spin`} viewBox="0 0 24 24" fill="none">
@@ -78,6 +87,13 @@ export default function ConvertPanel() {
         description: '将每页 PDF 导出为高清 PNG 图片',
         icon: ImageIcon,
         color: 'text-green-500',
+      },
+      {
+        key: 'to-azw3',
+        label: '导出为电子书 (AZW3)',
+        description: '将 PDF 转换为 Kindle 电子书格式',
+        icon: BookIcon,
+        color: 'text-purple-500',
       },
     )
   }
