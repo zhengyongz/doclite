@@ -817,27 +817,54 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
       }
     }
 
-    pageChunks.push({ pageIndex: i, html })
+    // 检测是否为目录页（包含"目录""目  录"等关键词，且文本较短）
+    const pageText = textLines.map(l => l.str).join('').trim()
+    const isTocPage = /^(目\s*录|Table\s*of\s*Contents|Contents)/i.test(pageText)
+      && pageText.length < 200
+    pageChunks.push({ pageIndex: i, html, isTocPage })
 
     if (onProgress) onProgress(i, pdfDoc.numPages)
   }
 
-  // ---------- 构建正文 ----------
+  // ---------- 构建正文（跳过原始目录页，保留位置标记） ----------
   // 每页之间用 <mbp:pagebreak/> 分隔
   const enc2 = new TextEncoder()
-  const bodyParts = []
-  for (const crop of pageChunks) {
-    bodyParts.push(crop.html)
-    if (crop.pageIndex < pdfDoc.numPages) {
-      bodyParts.push('<mbp:pagebreak/>\n')
+  const pageBreakTag = '<mbp:pagebreak/>\n'
+
+  // 找到 PDF 原始目录页位置（取第一个匹配的页面）
+  const tocPageIndex = pageChunks.findIndex(c => c.isTocPage)
+
+  // 构建各页的字节范围映射（不含目录页内容，但保留占位）
+  const pageByteRanges = []  // {pageIndex, start, end, isTocSlot}
+  let acc = 0
+  const parts = []  // 临时片段数组
+  for (let pi = 0; pi < pageChunks.length; pi++) {
+    const crop = pageChunks[pi]
+    if (pi === tocPageIndex) {
+      // 原始目录页：记录占位长度（用临时占位符，后面替换）
+      // 先用占位标记，实际内容会在后面计算后插入
+      const placeholder = '__TOC_PLACEHOLDER__'
+      pageByteRanges.push({ pageIndex: pi, start: acc, isTocSlot: true })
+      parts.push(placeholder)
+      acc += enc2.encode(placeholder).length
+    } else {
+      pageByteRanges.push({ pageIndex: pi, start: acc, isTocSlot: false })
+      parts.push(crop.html)
+      acc += enc2.encode(crop.html).length
+    }
+    if (pi < pageChunks.length - 1) {
+      parts.push(pageBreakTag)
+      acc += enc2.encode(pageBreakTag).length
     }
   }
-  let bodyText = bodyParts.join('')
+  let bodyText = parts.join('')
 
   // ---------- 识别标题并计算 filepos ----------
-  // 注意：filepos 是相对「第一条文本记录起点」的字节偏移。
-  // 由于目录页会放在正文之前，标题的真实 filepos = bodyText 内偏移 + 目录页字节长度。
-  // 目录页长度只取决于标题（filepos 固定 10 位数字），与具体值无关，可先算出。
+  // filepos 是相对「第一条文本记录起点」的字节偏移。
+  // 目录页会替换到 tocPageIndex 对应的占位位置。
+  // 占位符 '__TOC_PLACEHOLDER__' 的字节长度 = 20 字节
+  const PLACEHOLDER_LEN = enc2.encode('__TOC_PLACEHOLDER__').length
+
   const scanHeadings = (text) => {
     const result = []
     const re = /<h\d>([^<]+)<\/h\d>/g
@@ -855,16 +882,31 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
 
   // 如果正文没有标题，用「第 N 页」作为回退目录
   if (headings.length === 0) {
-    let acc = 0
-    headings = pageChunks.map((c, i) => {
-      const pos = acc
-      acc += enc2.encode(c.html).length
-      if (i < pageChunks.length - 1) acc += enc2.encode('<mbp:pagebreak/>\n').length
-      return { title: `第 ${i + 1} 页`, filepos: pos }
-    })
+    headings = []
+    for (let pi = 0; pi < pageChunks.length; pi++) {
+      if (pi === tocPageIndex) continue  // 跳过原始目录页
+      const range = pageByteRanges[pi]
+      const title = `第 ${pi + 1} 页`
+      headings.push({ title, filepos: range.start })
+    }
+  } else {
+    // 修正 filepos：如果标题在目录页之后，需要减去占位符长度差（tocPage - placeholder）
+    // 占位符会被替换为实际的目录页，因此偏移 = 原偏移 - PLACEHOLDER_LEN（占位符被去掉）
+    // 但占位符位置之后的内容偏移需要调整
+    if (tocPageIndex >= 0) {
+      const tocSlot = pageByteRanges[tocPageIndex]
+      // 在 tocSlot.start 之后的标题，其 filepos 需要减去 PLACEHOLDER_LEN
+      // 因为占位符 '__TOC_PLACEHOLDER__'(20字节) 会被替换为实际 tocPage
+      headings = headings.map(h => {
+        if (h.filepos >= tocSlot.start) {
+          return { ...h, filepos: h.filepos - PLACEHOLDER_LEN }
+        }
+        return h
+      })
+    }
   }
 
-  // ---------- 构建目录页（两轮：先定长度，再定偏移） ----------
+  // ---------- 构建目录页 ----------
   const buildTocPage = (list) => {
     const items = list
       .map(h => `<a filepos="${String(h.filepos).padStart(10, '0')}">${escapeXml(h.title)}</a>`)
@@ -876,12 +918,23 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
   const placeholderToc = buildTocPage(headings.map(h => ({ ...h, filepos: 0 })))
   const tocLen = enc2.encode(placeholderToc).length
 
-  // 第二遍：最终偏移 = 正文内偏移 + 目录页长度
-  const finalHeadings = headings.map(h => ({ ...h, filepos: h.filepos + tocLen }))
+  // 第二遍：最终偏移修正
+  // 目录页会被替换到 tocPageIndex 位置。tocPageIndex 之后的标题 filepos 需要加上 (tocLen - PLACEHOLDER_LEN)
+  const finalHeadings = headings.map(h => {
+    if (tocPageIndex >= 0) {
+      const tocSlot = pageByteRanges[tocPageIndex]
+      if (h.filepos >= tocSlot.start) {
+        // 在目录页之后的内容：偏移 = 当前偏移 + tocLen - PLACEHOLDER_LEN
+        return { ...h, filepos: h.filepos + tocLen - PLACEHOLDER_LEN }
+      }
+    }
+    // 在目录页之前的内容：偏移不变（目录页替换占位符，不影响前面的偏移）
+    return h
+  })
   const tocPage = buildTocPage(finalHeadings)
 
-  // ---------- 组装最终文本 ----------
-  const finalText = tocPage + bodyText
+  // ---------- 组装最终文本：替换占位符 ----------
+  const finalText = bodyText.replace('__TOC_PLACEHOLDER__', tocPage)
   const title = stripExt(file.name)
   const mobi = createMobi({ title, text: finalText, images })
   const blob = new Blob([mobi], { type: 'application/x-mobipocket-ebook' })
