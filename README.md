@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '60bcb63c-75cc-4adf-bc3f-44224d46b4e8'
-  PropagateID: '60bcb63c-75cc-4adf-bc3f-44224d46b4e8'
-  ReservedCode1: '0c100a99-fd2f-460d-b70f-08e183f0b126'
-  ReservedCode2: '0c100a99-fd2f-460d-b70f-08e183f0b126'
+  ProduceID: '87687e79-0b49-4c94-a418-9931ed01e3f6'
+  PropagateID: '87687e79-0b49-4c94-a418-9931ed01e3f6'
+  ReservedCode1: '057be41d-0b79-40e4-8caf-ef5db565251e'
+  ReservedCode2: '057be41d-0b79-40e4-8caf-ef5db565251e'
 ---
 
 # 轻快文档工具箱 (DocLite)
@@ -43,6 +43,7 @@ AIGC:
 - 响应式布局，适配 PC 和手机浏览器
 - 拖拽上传 + 点击上传
 - PPT 支持键盘左右箭头翻页
+- PDF 转 MOBI 支持图片提取、章节目录、TBS 索引（Kindle/文石兼容）
 
 ## 技术栈
 
@@ -58,20 +59,45 @@ AIGC:
 - **html2canvas + jsPDF** — HTML → PDF 转换
 - **docx** — Word 文档生成（PDF → Word 转换）
 
-## 快速开始
+## 安装与使用
+
+### Linux (deb)
 
 ```bash
-# 安装依赖
+# 安装
+sudo dpkg -i doclite_0.1.0_amd64.deb
+
+# 启动（安装后可在应用菜单找到"轻快文档工具箱"，或命令行启动）
+doclite
+
+# 卸载
+sudo dpkg -r doclite
+```
+
+文件关联：安装后双击 .pdf/.docx/.xlsx/.pptx/.mobi/.azw3 文件即可用 DocLite 打开。
+
+### Windows (NSIS)
+
+下载 `.exe` 安装包，双击安装即可。安装后支持文件关联。
+
+### 从源码构建
+
+```bash
+# 克隆项目
+git clone git@github.com:zhengyongz/doclite.git
+cd doclite
+
+# 安装依赖（会自动执行 patch-package 应用 foliate-js 补丁）
 npm install
 
-# 启动开发服务器 (http://localhost:5180)
+# 开发模式
 npm run dev
 
-# 构建生产版本
-npm run build
+# 构建 deb 包（Linux）
+npm run build && npx electron-builder --linux deb
 
-# 预览生产构建
-npm run preview
+# 构建 NSIS 包（Windows）
+npm run build && npx electron-builder --win nsis
 ```
 
 ## 项目结构
