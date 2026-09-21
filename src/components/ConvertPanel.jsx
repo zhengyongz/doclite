@@ -90,7 +90,7 @@ export default function ConvertPanel() {
       },
       {
         key: 'to-azw3',
-        label: '导出为电子书 (AZW3)',
+        label: '导出为电子书 (MOBI)',
         description: '将 PDF 转换为 Kindle 电子书格式',
         icon: BookIcon,
         color: 'text-purple-500',

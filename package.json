@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "postinstall": "patch-package",
-    "electron:dev": "vite build && electron electron/main.js",
+    "electron:dev": "vite build && electron electron/main.cjs",
     "electron:build": "vite build && electron-builder --linux deb",
     "electron:build:win": "vite build && electron-builder --win nsis"
   },
@@ -38,12 +38,56 @@
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7"
   },
-"build": {
+  "build": {
       "appId": "com.doclite.app",
       "productName": "DocLite",
       "directories": {
         "output": "release"
       },
+      "fileAssociations": [
+        {
+          "ext": "pdf",
+          "name": "PDF 文档",
+          "description": "PDF 文档",
+          "role": "Viewer",
+          "mimeType": "application/pdf"
+        },
+        {
+          "ext": "mobi",
+          "name": "Kindle 电子书",
+          "description": "MOBI 电子书",
+          "role": "Viewer",
+          "mimeType": "application/x-mobipocket-ebook"
+        },
+        {
+          "ext": "azw3",
+          "name": "Kindle 电子书",
+          "description": "AZW3 电子书",
+          "role": "Viewer",
+          "mimeType": "application/vnd.amazon.ebook"
+        },
+        {
+          "ext": "docx",
+          "name": "Word 文档",
+          "description": "Word 文档",
+          "role": "Viewer",
+          "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        },
+        {
+          "ext": "xlsx",
+          "name": "Excel 表格",
+          "description": "Excel 表格",
+          "role": "Viewer",
+          "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        },
+        {
+          "ext": "pptx",
+          "name": "PPT 幻灯片",
+          "description": "PowerPoint 幻灯片",
+          "role": "Viewer",
+          "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        }
+      ],
       "files": [
         "dist/**/*",
         "electron/**/*",

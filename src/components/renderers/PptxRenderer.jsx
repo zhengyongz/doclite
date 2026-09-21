@@ -19,14 +19,18 @@ function ChevronRight({ className }) {
   )
 }
 
+// EMU to pixel conversion (914400 EMU = 1 inch, 96 dpi)
+const EMU = 914400
+const emuToPx = (emu) => emu / EMU * 96
+
 /**
- * Parse a .pptx file (which is a ZIP archive of XML files) in the browser
- * using JSZip. Extracts text runs and images for each slide and renders
- * them as simplified HTML slides.
+ * Parse a .pptx file (ZIP archive of XML) in the browser using JSZip.
+ * Extracts shapes with position/size/background/text and images,
+ * renders them as absolutely-positioned elements on a 16:9 canvas.
  */
 export default function PptxRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
-  const [slides, setSlides] = useState([])   // [{ texts: [], images: [{url, x, y, cx, cy}] }]
+  const [slides, setSlides] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentSlide, setCurrentSlide] = useState(0)
 
@@ -39,7 +43,18 @@ export default function PptxRenderer() {
       const arrayBuffer = await currentFile.file.arrayBuffer()
       const zip = await JSZip.loadAsync(arrayBuffer)
 
-      // Find all slide XML files: ppt/slides/slide1.xml, slide2.xml, ...
+      // Get presentation dimensions from ppt/presentation.xml
+      let slideWidth = 960  // default px (10in @ 96dpi)
+      let slideHeight = 540  // default px (7.5in @ 96dpi)
+      const presXml = await zip.file('ppt/presentation.xml')?.async('string')
+      if (presXml) {
+        const sizeMatch = /<p:sldSz[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(presXml)
+        if (sizeMatch) {
+          slideWidth = emuToPx(parseInt(sizeMatch[1], 10))
+          slideHeight = emuToPx(parseInt(sizeMatch[2], 10))
+        }
+      }
+
       const slideEntries = Object.keys(zip.files)
         .filter(path => /^ppt\/slides\/slide\d+\.xml$/.test(path))
         .sort((a, b) => {
@@ -53,54 +68,99 @@ export default function PptxRenderer() {
       for (const slidePath of slideEntries) {
         const xmlStr = await zip.files[slidePath].async('string')
 
-        // --- Extract text ---
-        // Match <a:t>...</a:t> text runs
-        const textMatches = []
-        const textRegex = /<a:t>(.*?)<\/a:t>/g
-        let m
-        while ((m = textRegex.exec(xmlStr)) !== null) {
-          if (m[1].trim()) textMatches.push(decodeXml(m[1]))
-        }
+        // --- Parse shapes and pictures ---
+        const shapes = []
+        const allRIds = new Set()
 
-        // --- Extract images ---
-        const images = []
-        // Match <p:pic> blocks to get relationship IDs and positions
-        // rId is in <a:blip r:embed="rId2"/>
+        // Match <p:sp> (shapes) and <p:pic> (pictures)
+        // Both have <p:spPr> with <p:off> and <p:ext> for position/size
+
+        // Parse <p:pic> blocks (images)
         const picRegex = /<p:pic\b[\s\S]*?<\/p:pic>/g
-        const blipRegex = /r:embed="(rId\d+)"/
-        // Offsets: <p:off x="123" y="456"/> Extents: <p:ext cx="789" cy="012"/>
-        const offRegex = /<p:off\s+x="(-?\d+)"\s+y="(-?\d+)"/
-        const extSizeRegex = /<p:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/
-
         let picMatch
         while ((picMatch = picRegex.exec(xmlStr)) !== null) {
           const block = picMatch[0]
-          const blipMatch = blipRegex.exec(block)
-          if (!blipMatch) continue
-          const rId = blipMatch[1]
+          const blipMatch = /r:embed="(rId\d+)"/.exec(block)
+          const svgBlipMatch = /<a:svgBlip\s+r:embed="(rId\d+)"/.exec(block)
+          const offMatch = /<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/.exec(block)
+          const extMatch = /<a:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/.exec(block)
 
-          // Position (EMU units, 914400 EMU = 1 inch)
-          const offMatch = offRegex.exec(block)
-          const extSizeMatch = extSizeRegex.exec(block)
-          const x = offMatch ? parseInt(offMatch[1], 10) / 914400 * 96 : 0  // convert to px @96dpi
-          const y = offMatch ? parseInt(offMatch[2], 10) / 914400 * 96 : 0
-          const cx = extSizeMatch ? parseInt(extSizeMatch[1], 10) / 914400 * 96 : 300
-          const cy = extSizeMatch ? parseInt(extSizeMatch[2], 10) / 914400 * 96 : 200
+          const rId = blipMatch ? blipMatch[1] : (svgBlipMatch ? svgBlipMatch[1] : null)
+          if (!rId) continue
 
-          images.push({ rId, x, y, cx, cy, url: null })
+          const x = offMatch ? emuToPx(parseInt(offMatch[1], 10)) : 0
+          const y = offMatch ? emuToPx(parseInt(offMatch[2], 10)) : 0
+          const cx = extMatch ? emuToPx(parseInt(extMatch[1], 10)) : 300
+          const cy = extMatch ? emuToPx(parseInt(extMatch[2], 10)) : 200
+
+          allRIds.add(rId)
+          shapes.push({ type: 'image', rId, x, y, cx, cy, url: null })
         }
 
-        // Resolve image rIds to actual file paths via slide rels file
-        // e.g. ppt/slides/_rels/slide1.xml.rels
+        // Parse <p:sp> blocks (text shapes with position/size/background)
+        const spRegex = /<p:sp\b[\s\S]*?<\/p:sp>/g
+        let spMatch
+        while ((spMatch = spRegex.exec(xmlStr)) !== null) {
+          const block = spMatch[0]
+          const offMatch = /<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/.exec(block)
+          const extMatch = /<a:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/.exec(block)
+
+          // Skip if no position info (likely a group/note shape)
+          if (!offMatch || !extMatch) continue
+
+          const x = emuToPx(parseInt(offMatch[1], 10))
+          const y = emuToPx(parseInt(offMatch[2], 10))
+          const cx = emuToPx(parseInt(extMatch[1], 10))
+          const cy = emuToPx(parseInt(extMatch[2], 10))
+
+          // Extract text runs within this shape
+          const texts = []
+          const textRegex = /<a:t>(.*?)<\/a:t>/g
+          let tm
+          while ((tm = textRegex.exec(block)) !== null) {
+            if (tm[1].trim()) texts.push(decodeXml(tm[1]))
+          }
+
+          // Extract background fill color from <p:spPr> only (not text fill)
+          let bgFill = null
+          const spPrMatch = /<p:spPr>([\s\S]*?)<\/p:spPr>/.exec(block)
+          if (spPrMatch) {
+            const fillMatch = /<a:solidFill>\s*<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/.exec(spPrMatch[1])
+            if (fillMatch) bgFill = '#' + fillMatch[1]
+          }
+
+          // Extract text color from <a:rPr> → <a:solidFill> → <a:srgbClr>
+          let textColor = null
+          const textColorMatch = /<a:rPr[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/.exec(block)
+          if (textColorMatch) textColor = '#' + textColorMatch[1]
+
+          // Extract font size (in hundredths of a point)
+          let fontSize = null
+          const fontSizeMatch = /<a:rPr[^>]*sz="(\d+)"/.exec(block)
+          if (fontSizeMatch) fontSize = parseInt(fontSizeMatch[1], 10) / 100
+
+          // Detect if this is a title/placeholder (via <p:nvSpPr>/<p:nvPr>/<p:ph type="title"/>)
+          const isTitle = /<p:ph\s+type="title"/.test(block)
+          const isBody = /<p:ph\s+type="body"/.test(block) || (!isTitle && texts.length > 0)
+
+          if (texts.length > 0 || bgFill) {
+            shapes.push({ type: 'text', texts, x, y, cx, cy, bgFill, textColor, fontSize, isTitle, isBody })
+          }
+        }
+
+        // Sort shapes by y position (top to bottom, then left to right)
+        shapes.sort((a, b) => a.y - b.y || a.x - b.x)
+
+        // Resolve image rIds via slide rels
         const relsPath = slidePath
           .replace('ppt/slides/', 'ppt/slides/_rels/')
           .replace('.xml', '.xml.rels')
 
-        if (zip.files[relsPath] && images.length > 0) {
+        if (zip.files[relsPath]) {
           const relsXml = await zip.files[relsPath].async('string')
-          for (const img of images) {
-            // Match: <Relationship Id="rId2" Type="..." Target="media/image1.png"/>
-            const relRegex = new RegExp(`Id="${img.rId}"[^>]*Target="([^"]+)"`)
+          for (const shape of shapes) {
+            if (shape.type !== 'image' || !shape.rId) continue
+            const relRegex = new RegExp(`Id="${shape.rId}"[^>]*Target="([^"]+)"`)
             const relMatch = relRegex.exec(relsXml)
             if (relMatch) {
               const target = relMatch[1]
@@ -108,13 +168,13 @@ export default function PptxRenderer() {
               const fullPath = 'ppt/' + target.replace(/^\.\.\//, '')
               if (zip.files[fullPath]) {
                 const blob = await zip.files[fullPath].async('blob')
-                img.url = URL.createObjectURL(blob)
+                shape.url = URL.createObjectURL(blob)
               }
             }
           }
         }
 
-        parsedSlides.push({ texts: textMatches, images })
+        parsedSlides.push({ shapes, width: slideWidth, height: slideHeight })
       }
 
       setSlides(parsedSlides)
@@ -129,15 +189,13 @@ export default function PptxRenderer() {
 
   useEffect(() => {
     parsePptx()
-    // Cleanup object URLs on unmount
     return () => {
-      slides.forEach(s => s.images.forEach(img => {
-        if (img.url) URL.revokeObjectURL(img.url)
+      slides.forEach(s => s.shapes.forEach(sh => {
+        if (sh.url) URL.revokeObjectURL(sh.url)
       }))
     }
   }, [parsePptx])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard navigation
   useEffect(() => {
     if (slides.length === 0) return
     const onKey = (e) => {
@@ -169,54 +227,77 @@ export default function PptxRenderer() {
   }
 
   const slide = slides[currentSlide]
+  const slideW = slide.width || 960
+  const slideH = slide.height || 540
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Slide area */}
       <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-ink-100" style={{ zoom: zoomLevel / 100 }}>
         <div
           className="relative bg-white shadow-soft-lg rounded-lg overflow-hidden"
           style={{
-            width: 'min(960px, 100%)',
-            aspectRatio: '16 / 9',
+            width: `min(${slideW}px, 100%)`,
+            aspectRatio: `${slideW} / ${slideH}`,
           }}
         >
-          {/* Images layer */}
-          {slide.images.map((img, i) => (
-            <img
-              key={i}
-              src={img.url}
-              alt=""
-              className="absolute"
-              style={{
-                left: `${(img.x / 960) * 100}%`,
-                top: `${(img.y / 540) * 100}%`,
-                width: `${(img.cx / 960) * 100}%`,
-                height: `${(img.cy / 540) * 100}%`,
-                objectFit: 'contain',
-              }}
-            />
-          ))}
-
-          {/* Text layer */}
-          <div className="absolute inset-0 p-[6%] flex flex-col justify-center gap-2 overflow-hidden">
-            {slide.texts.map((text, i) => (
-              <p
-                key={i}
-                className={`${
-                  i === 0
-                    ? 'text-lg lg:text-2xl font-bold text-ink-800'
-                    : 'text-sm lg:text-base text-ink-600'
-                } leading-relaxed break-words`}
-              >
-                {text}
-              </p>
-            ))}
-          </div>
+          {slide.shapes.map((shape, i) => {
+            if (shape.type === 'image' && shape.url) {
+              return (
+                <img
+                  key={i}
+                  src={shape.url}
+                  alt=""
+                  className="absolute"
+                  style={{
+                    left: `${(shape.x / slideW) * 100}%`,
+                    top: `${(shape.y / slideH) * 100}%`,
+                    width: `${(shape.cx / slideW) * 100}%`,
+                    height: `${(shape.cy / slideH) * 100}%`,
+                    objectFit: 'contain',
+                  }}
+                />
+              )
+            }
+            if (shape.type === 'text' && shape.texts.length > 0) {
+              const fontSizePx = shape.fontSize
+                ? `${Math.max(10, shape.fontSize * slideW / 960)}px`
+                : shape.isTitle
+                  ? `${24 * slideW / 960}px`
+                  : `${16 * slideW / 960}px`
+              return (
+                <div
+                  key={i}
+                  className="absolute flex flex-col justify-center overflow-hidden"
+                  style={{
+                    left: `${(shape.x / slideW) * 100}%`,
+                    top: `${(shape.y / slideH) * 100}%`,
+                    width: `${(shape.cx / slideW) * 100}%`,
+                    height: `${(shape.cy / slideH) * 100}%`,
+                    background: shape.bgFill || 'transparent',
+                    padding: '4px 8px',
+                  }}
+                >
+                  {shape.texts.map((text, j) => (
+                    <p
+                      key={j}
+                      className="leading-snug break-words m-0"
+                      style={{
+                        fontSize: fontSizePx,
+                        fontWeight: shape.isTitle ? '700' : '400',
+                        color: shape.textColor || (shape.isTitle ? '#1a1a1a' : '#333'),
+                      }}
+                    >
+                      {text}
+                    </p>
+                  ))}
+                </div>
+              )
+            }
+            return null
+          })}
         </div>
       </div>
 
-      {/* Navigation bar */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-t border-ink-100">
         <button
           onClick={() => setCurrentSlide(i => Math.max(0, i - 1))}

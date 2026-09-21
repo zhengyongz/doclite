@@ -722,19 +722,63 @@ async function imageToJpegBytes(dataUrl, maxWidth = 900, quality = 0.75) {
 
 /**
  * 判断一行文本是否为章节标题（启发式）
- * - 长度适中（≤ 30 字符）
- * - 不含句末标点（。！？；）
- * - 非纯数字/页码
- * - 或字号显著大于同行
+ * 目标：识别"第X章""第X节""推荐序""后记"等真正的章节标题，
+ *       排除正文长句、单字残句、页码等误判。
+ * 规则优先级（从上到下）：
+ * 1. 明确的章节/结构标题（第X章/节/卷/部，推荐序、后记等）→ 是
+ * 2. 过短（<3 字，非上述模式）→ 否（避免"从""在""艾"单字误判）
+ * 3. 含句末标点/句中逗号冒号等 → 否（正文句子特征）
+ * 4. 超长（>30 字）→ 否
+ * 5. 字号显著偏大（>18）且 ≤ 20 字 → 是（正文大标题）
  */
 function looksLikeHeading(line) {
   const s = line.str.trim()
-  if (!s || s.length > 30) return false
+  if (!s) return false
+  const len = s.length
+
+  // 纯数字/页码/装饰符号
   if (/^[\d\s·.—-]+$/.test(s)) return false
-  if (/[。！？；：，,]$/.test(s)) return false
+
+  // 明确的章节/结构标题（无论字号）
   if (/^第[一二三四五六七八九十百千万\d]+[章节卷部篇]/.test(s)) return true
-  if (line.size && line.size > 16) return true
+  if (/^(推荐序|自序|代序|序言|前言|写在前面|楔子|引言|导言|目录|后记|尾声|附录|跋|结语|致谢|鸣谢)$/.test(s)) return true
+
+  // 常见"小节标题"排除词表：这类是正文内的小节/栏目名，不应进目录。
+  // 观察 PDF 常见版式：章节后有「故事引申」「现实链接」等栏目块，
+  // 以及「消费贷款」「应急贷款」等小节标题，字号偏大但非章节。
+  if (/^(故事引申|现实链接|消费贷款|应急贷款|心灵感悟|人生启示|思维拓展|延伸阅读|知识链接|背景知识|延伸思考|课堂讨论|本章小结|本章回顾|阅读思考|互动环节|小组讨论|情景再现)$/.test(s)) return false
+
+  // 过短：单字/双字残句排除（除上述明确标题外）
+  if (len < 3) return false
+
+  // 正文句子特征：含句号、逗号、冒号、分号、问号等标点
+  if (/[。，：；、？!！?？]/.test(s)) return false
+
+  // 超长
+  if (len > 30) return false
+
+  // 字号显著偏大（PDF 正文标题特征）
+  if (line.size && line.size > 16 && len <= 20) return true
+
   return false
+}
+
+/**
+ * 判断是否为"章节标题后的英文副标题"。
+ * 典型如原书封面副标题：HOW AN ECONOMY GROWS AND WHY IT CRASHES
+ * 这类行紧跟 <h3> 之后，文石阅读器会把它误识别为章节名显示在目录/页眉，
+ * 故需要隐藏处理（避免文石把英文副标题当章节节点）。
+ * 判定条件：无中文、含英文字母、绝大多数大写、无句末标点、长度 5..60。
+ */
+function looksLikeEnglishSubtitle(s) {
+  if (!s || s.length < 5 || s.length > 60) return false
+  if (/[\u4e00-\u9fff]/.test(s)) return false // 无中文
+  if (!/[A-Za-z]/.test(s)) return false // 含英文字母
+  if (/[。！？；，：!?;,:]/.test(s)) return false // 无句末/句中标点
+  const upper = (s.match(/[A-Z]/g) || []).length
+  const letters = (s.match(/[A-Za-z]/g) || []).length
+  if (letters === 0) return false
+  return upper / letters >= 0.7 // 绝大多数大写
 }
 
 /**
@@ -801,27 +845,85 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
     allItems.sort((a, b) => b.y - a.y)
 
     // ---- 组装 XHTML ----
+    // 段落合并策略：连续的非标题文本行合并到同一个 <p> 内（用空格连接），
+    // 使阅读器把整段当作一个段落渲染、文字自然排满行宽；
+    // 标题（<h3>）与图片会断开段落。行内末尾若本身以句号结尾，
+    // 说明原文该处是独立短句，保留换行语义（用 <br/> 连接）。
     let html = ''
+    let para = [] // 当前段落收集的行
+    let subtitleLines = null // 章节标题后连续英文副标题行的收集器
+    const flushPara = () => {
+      if (para.length > 0) {
+        html += `<p>${para.map(t => escapeXml(t)).join(' ')}</p>\n`
+        para = []
+      }
+    }
+    const flushSubtitle = () => {
+      if (subtitleLines && subtitleLines.length > 0) {
+        // 章节标题后的英文副标题：直接丢弃，不输出任何 HTML。
+        // 原因：display:none 只对 Web 内核生效，文石阅读器会扫描纯文本流，
+        // 把大写英文行误识别为章节名显示在目录/页眉（实测复现）。
+        // 彻底移除这些行，避免任何设备把副标题当章节节点。
+        subtitleLines = null
+      }
+    }
+    /** 从行内剔除尾部英文大写副标题（如"中岛帝国：远方的生命线 HOW AN ECONOMY..."），
+     * 返回剔后剩余文本；若整行都是副标题返回空串 */
+    const stripEnglishSubtitleTail = (s) => {
+      // 匹配：行尾的大写英文短语（≥ 5 字符，且全大写字母/空格）
+      const m = s.match(/\s+([A-Z][A-Z\s'&:]{4,})\s*$/)
+      if (m && looksLikeEnglishSubtitle(m[1].trim())) return s.slice(0, m.index).trim()
+      return s
+    }
     for (const item of allItems) {
       if (item.type === 'text') {
-        const trimmed = item.str.trim()
+        let trimmed = item.str.trim()
+        if (!trimmed) continue
+        // PDF 版式问题：个别行是「中文章节名 + 英文副标题」写在同一物理行
+        // （如"中岛帝国：远方的生命线 HOW AN ECONOMY..."），副标题独立行方案
+        // （looksLikeEnglishSubtitle）不匹配含中文的行，需先剔除尾部英文尾巴
+        trimmed = stripEnglishSubtitleTail(trimmed)
         if (!trimmed) continue
         if (looksLikeHeading(item)) {
+          flushPara()
+          flushSubtitle()
           html += `<h3>${escapeXml(trimmed)}</h3>\n`
+          subtitleLines = [] // 开始收集可能的英文副标题
+        } else if (subtitleLines !== null && looksLikeEnglishSubtitle(trimmed)) {
+          // 标题后连续的大写英文行：并入副标题收集器（整组丢弃）
+          subtitleLines.push(trimmed)
         } else {
-          html += `<p>${escapeXml(trimmed)}</p>\n`
+          flushSubtitle()
+          subtitleLines = null
+          para.push(trimmed)
         }
       } else if (item.type === 'image') {
+        flushPara()
+        flushSubtitle()
+        subtitleLines = null
         // 图片按页面宽度比例缩放到 100%
         html += `<p class="ebook-img"><img recindex="${item.recindex}" width="100%" alt=""/></p>\n`
       }
     }
+    flushPara()
+    flushSubtitle()
 
     // 检测是否为目录页（包含"目录""目  录"等关键词，且文本较短）
     const pageText = textLines.map(l => l.str).join('').trim()
-    const isTocPage = /^(目\s*录|Table\s*of\s*Contents|Contents)/i.test(pageText)
+    // 目录页判定：
+    // 1. 起始页：以"目录"开头且总字符 < 200
+    // 2. 后续页：若上一页是目录页，且本页所有行都是短行（≤ 25 字符，无长句正文）
+    //    —— 因为目录经常跨多页，后续页以章节标题行开头，不以"目录"开头
+    const isTocStart = /^(目\s*录|Table\s*of\s*Contents|Contents)/i.test(pageText)
       && pageText.length < 200
-    pageChunks.push({ pageIndex: i, html, isTocPage })
+    const prevIsToc = pageChunks.length > 0 && pageChunks[pageChunks.length - 1].isTocPage
+    const isTocContinuation = prevIsToc
+      && textLines.length > 0
+      && textLines.every(l => l.str.trim().length > 0 && l.str.trim().length <= 25)
+      && textLines.every(l => !/[。！？；]$/.test(l.str.trim()))
+      && !/^(目\s*录)$/i.test(pageText.trim())
+    const isTocPage = isTocStart || isTocContinuation
+    pageChunks.push({ pageIndex: i, html, isTocPage, textLines: textLines.map(l => l.str.trim()) })
 
     if (onProgress) onProgress(i, pdfDoc.numPages)
   }
@@ -831,28 +933,36 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
   const enc2 = new TextEncoder()
   const pageBreakTag = '<mbp:pagebreak/>\n'
 
-  // 找到 PDF 原始目录页位置（取第一个匹配的页面）
-  const tocPageIndex = pageChunks.findIndex(c => c.isTocPage)
+  // 找到所有原始目录页位置（目录可能跨多页）
+  const tocPageIndices = pageChunks
+    .map((c, i) => c.isTocPage ? i : -1)
+    .filter(i => i >= 0)
+  const tocPageIndex = tocPageIndices.length > 0 ? tocPageIndices[0] : -1
 
   // 构建各页的字节范围映射（不含目录页内容，但保留占位）
   const pageByteRanges = []  // {pageIndex, start, end, isTocSlot}
+  const TOC_PLACEHOLDER = '__TOC_PLACEHOLDER__'
+  const PLACEHOLDER_LEN = enc2.encode(TOC_PLACEHOLDER).length
   let acc = 0
   const parts = []  // 临时片段数组
   for (let pi = 0; pi < pageChunks.length; pi++) {
     const crop = pageChunks[pi]
-    if (pi === tocPageIndex) {
-      // 原始目录页：记录占位长度（用临时占位符，后面替换）
-      // 先用占位标记，实际内容会在后面计算后插入
-      const placeholder = '__TOC_PLACEHOLDER__'
+    if (tocPageIndices.includes(pi)) {
+      // 原始目录页：仅第一个占位符保留（用于插入完整目录页），
+      // 后续目录续页直接置空，避免电子书中出现重复目录
       pageByteRanges.push({ pageIndex: pi, start: acc, isTocSlot: true })
-      parts.push(placeholder)
-      acc += enc2.encode(placeholder).length
+      if (pi === tocPageIndices[0]) {
+        parts.push(TOC_PLACEHOLDER)
+        acc += PLACEHOLDER_LEN
+      }
     } else {
       pageByteRanges.push({ pageIndex: pi, start: acc, isTocSlot: false })
       parts.push(crop.html)
       acc += enc2.encode(crop.html).length
     }
-    if (pi < pageChunks.length - 1) {
+    // 目录续页（非首个）后面不插 pagebreak，避免产生空页
+    const skipBreak = tocPageIndices.includes(pi) && pi !== tocPageIndices[0]
+    if (pi < pageChunks.length - 1 && !skipBreak) {
       parts.push(pageBreakTag)
       acc += enc2.encode(pageBreakTag).length
     }
@@ -861,13 +971,52 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
 
   // ---------- 识别标题并计算 filepos ----------
   // filepos 是相对「第一条文本记录起点」的字节偏移。
-  // 目录页会替换到 tocPageIndex 对应的占位位置。
-  // 占位符 '__TOC_PLACEHOLDER__' 的字节长度 = 20 字节
-  const PLACEHOLDER_LEN = enc2.encode('__TOC_PLACEHOLDER__').length
+  // 重要：filepos 必须基于「最终拼接文本」的真实字节偏移计算。
+  // 旧方案在替换前的 bodyText 上计算，再叠加占位符增量与 GUIDE_LEN 修正，
+  // 但目录页替换会使偏移推算与实际文本偏差，导致 filepos 错位，
+  // foliate 插入锚点时会切断 <img>、</p> 等标签，破坏 HTML 结构
+  // （表现为标签脚本泄露、文字折行、排版混乱）。
+  // 新方案：先用与真实目录页等长的「占位目录页」替换占位符，得到最终形态的
+  // 临时正文，直接在临时正文上扫描 <h3> 的真实字节偏移，保证精确。
 
+  // 1. 先扫描标题名（不依赖偏移），用于构建等长的占位目录页
+  const scanHeadingTitles = (text) => {
+    const result = []
+    const re = /<h3>([^<]+)<\/h3>/g
+    let mm
+    while ((mm = re.exec(text)) !== null) result.push(mm[1])
+    return result
+  }
+  let headingTitles = scanHeadingTitles(bodyText)
+
+  // 如果正文没有标题，用「第 N 页」作为回退目录标题
+  if (headingTitles.length === 0) {
+    headingTitles = []
+    for (let pi = 0; pi < pageChunks.length; pi++) {
+      if (tocPageIndices.includes(pi)) continue // 跳过原始目录页
+      headingTitles.push(`第 ${pi + 1} 页`)
+    }
+  }
+
+  // 2. 构建占位目录页（filepos 全部为 0，与真实目录页结构/长度完全一致）
+  //    用它替换占位符，得到与最终形态等长的临时正文，用于精确测量偏移
+  const buildTocPage = (list) => {
+    const items = list
+      .map(h => `<a filepos="${String(h.filepos).padStart(10, '0')}">${escapeXml(h.title)}</a>`)
+      .join('<br/>\n')
+    // 目录页是正文 <body> 内的一段，不能包含 <html>/<head>/<body> 包裹，
+    // 否则会形成嵌套 HTML 导致 Kindle/文石解析器出错
+    return `<h1>目录</h1>\n${items}\n<mbp:pagebreak/>\n`
+  }
+
+  const placeholderToc = buildTocPage(headingTitles.map(t => ({ title: t, filepos: 0 })))
+  const tocLen = enc2.encode(placeholderToc).length
+  const tmpBody = bodyText.replaceAll(TOC_PLACEHOLDER, placeholderToc)
+
+  // 3. 在临时正文上扫描 <h3> 的真实字节偏移（目录页用 <h1>，不会被匹配）
   const scanHeadings = (text) => {
     const result = []
-    const re = /<h\d>([^<]+)<\/h\d>/g
+    const re = /<h3>([^<]+)<\/h3>/g
     let mm
     while ((mm = re.exec(text)) !== null) {
       result.push({
@@ -878,67 +1027,59 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
     return result
   }
 
-  let headings = scanHeadings(bodyText)
+  let headings = scanHeadings(tmpBody)
 
-  // 如果正文没有标题，用「第 N 页」作为回退目录
+  // 回退目录：基于临时正文逐页计算偏移（跳过原始目录页）
   if (headings.length === 0) {
     headings = []
     for (let pi = 0; pi < pageChunks.length; pi++) {
-      if (pi === tocPageIndex) continue  // 跳过原始目录页
+      if (tocPageIndices.includes(pi)) continue
       const range = pageByteRanges[pi]
-      const title = `第 ${pi + 1} 页`
-      headings.push({ title, filepos: range.start })
-    }
-  } else {
-    // 修正 filepos：如果标题在目录页之后，需要减去占位符长度差（tocPage - placeholder）
-    // 占位符会被替换为实际的目录页，因此偏移 = 原偏移 - PLACEHOLDER_LEN（占位符被去掉）
-    // 但占位符位置之后的内容偏移需要调整
-    if (tocPageIndex >= 0) {
-      const tocSlot = pageByteRanges[tocPageIndex]
-      // 在 tocSlot.start 之后的标题，其 filepos 需要减去 PLACEHOLDER_LEN
-      // 因为占位符 '__TOC_PLACEHOLDER__'(20字节) 会被替换为实际 tocPage
-      headings = headings.map(h => {
-        if (h.filepos >= tocSlot.start) {
-          return { ...h, filepos: h.filepos - PLACEHOLDER_LEN }
-        }
-        return h
+      const beforeCount = tocPageIndices.filter(idx => pageByteRanges[idx].start <= range.start).length
+      headings.push({
+        title: `第 ${pi + 1} 页`,
+        filepos: range.start + beforeCount * (tocLen - PLACEHOLDER_LEN),
       })
     }
   }
 
-  // ---------- 构建目录页 ----------
-  const buildTocPage = (list) => {
-    const items = list
-      .map(h => `<a filepos="${String(h.filepos).padStart(10, '0')}">${escapeXml(h.title)}</a>`)
-      .join('<br/>\n')
-    return `<html><head><guide><reference type="toc" title="目录" filepos="0000000000"/></guide></head><body>\n<h1>目录</h1>\n${items}\n<mbp:pagebreak/>\n</body></html>`
-  }
+  // 4. 所有正文偏移 + GUIDE_LEN（最终文本头部有 guide 前缀），构建真实目录页
+  // 注意：<guide> 不能放在目录页内！foliate-js 的 getGuide() 只从
+  // sections[0]（第一条文本记录，即第一个 <mbp:pagebreak/> 之前）读取 <reference>。
+  // 因此 <guide> 需注入到正文最前（与封面同处 section 0），
+  // filepos 指向目录页在拼接文本中的真实字节偏移。
+  // guide 前缀作为 HTML 文档开头：<html><head><guide>...</head><body> 包裹正文，
+  // 使第一条文本记录成为完整 HTML 文档（Kindle 解析器要求），
+  // 正文末尾由 mobiWriter 统一补 </body></html>。
+  // reference 闭合斜杠前必须有空格（calibre serializer 原注释：
+  // "Space required or won't work, I kid you not"），Kindle 对 <reference .../> 
+  // 无空格闭合解析可能失败。
+  const buildGuidePrefix = (filepos) =>
+    `<html><head><guide><reference type="toc" title="目录" filepos="${String(filepos).padStart(10, '0')}" /></guide></head><body>\n`
+  const GUIDE_LEN = enc2.encode(buildGuidePrefix(0)).length
 
-  // 第一遍：用占位 filepos 生成目录页，测出其字节长度
-  const placeholderToc = buildTocPage(headings.map(h => ({ ...h, filepos: 0 })))
-  const tocLen = enc2.encode(placeholderToc).length
-
-  // 第二遍：最终偏移修正
-  // 目录页会被替换到 tocPageIndex 位置。tocPageIndex 之后的标题 filepos 需要加上 (tocLen - PLACEHOLDER_LEN)
-  const finalHeadings = headings.map(h => {
-    if (tocPageIndex >= 0) {
-      const tocSlot = pageByteRanges[tocPageIndex]
-      if (h.filepos >= tocSlot.start) {
-        // 在目录页之后的内容：偏移 = 当前偏移 + tocLen - PLACEHOLDER_LEN
-        return { ...h, filepos: h.filepos + tocLen - PLACEHOLDER_LEN }
-      }
-    }
-    // 在目录页之前的内容：偏移不变（目录页替换占位符，不影响前面的偏移）
-    return h
-  })
+  const finalHeadings = headings.map(h => ({ ...h, filepos: h.filepos + GUIDE_LEN }))
   const tocPage = buildTocPage(finalHeadings)
 
-  // ---------- 组装最终文本：替换占位符 ----------
-  const finalText = bodyText.replace('__TOC_PLACEHOLDER__', tocPage)
+  // 目录页在最终文本中的真实偏移：临时正文中第一个 <h1>目录</h1> 的字节偏移 + GUIDE_LEN
+  const firstTocOffsetInBody = tmpBody.indexOf('<h1>目录</h1>')
+  const tocFilepos = (firstTocOffsetInBody >= 0
+    ? enc2.encode(tmpBody.slice(0, firstTocOffsetInBody)).length
+    : 0) + GUIDE_LEN
+
+  // 用实际目录页替换所有目录占位符，并注入 guide 前缀（与封面同 section 0）
+  let finalText = bodyText.replaceAll(TOC_PLACEHOLDER, tocPage)
+  if (tocPageIndex >= 0) {
+    finalText = buildGuidePrefix(tocFilepos) + finalText
+  }
   const title = stripExt(file.name)
-  const mobi = createMobi({ title, text: finalText, images })
+  // NCX 目录：与目录页 filepos 一致（finalHeadings 已含 GUIDE_LEN 偏移），
+  // 供 Kindle/文石解析器读取章节目录（避免文石把英文副标题当章节节点）。
+  const ncx = finalHeadings.map(h => ({ title: h.title, offset: h.filepos }))
+  const mobi = createMobi({ title, text: finalText, images, metadata: { creator: 'DocLite 生成' }, ncx })
   const blob = new Blob([mobi], { type: 'application/x-mobipocket-ebook' })
-  downloadBlob(blob, `${title}.azw3`)
+  // 方案A：内容为 MOBI6，扩展名用 .mobi（文石/Kindle 识别 MOBI6 需 .mobi 扩展名）
+  downloadBlob(blob, `${title}.mobi`)
 }
 
 // =========================================================================
@@ -975,7 +1116,7 @@ export async function convertFile(file, ext, targetFormat, onProgress = null) {
     const outName = file.name
     await pdfToPng(file, outName, onProgress)
   } else if (targetFormat === 'to-azw3') {
-    const outName = `${baseName}.azw3`
+    const outName = `${baseName}.mobi`
     await pdfToAzw3(file, outName, onProgress)
   } else {
     throw new Error(`未知的转换目标: ${targetFormat}`)
