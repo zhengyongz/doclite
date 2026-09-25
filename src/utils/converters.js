@@ -6,6 +6,7 @@
  *   .docx / .xlsx / .pptx → PDF   (通过 HTML → html2canvas → jsPDF)
  *   .pdf → .docx                  (通过 pdfjs 文本提取 → docx 包生成)
  *   .pdf → PNG                    (通过 pdfjs 逐页渲染为 PNG)
+ *   .pdf → .mobi/.azw3            (通过 pdfjs 文本/图片提取 → mobiWriter 生成)
  */
 
 import * as pdfjsLib from 'pdfjs-dist'
@@ -54,40 +55,41 @@ async function elementToPdf(targetEl, filename, opts = {}) {
 
   // 如果提供了多个页面元素（如多张幻灯片），逐个截图合成
   const elements = pageElements || [targetEl]
-  const canvases = []
+  if (elements.length === 0) return
 
-  for (const el of elements) {
-    // 确保元素可见
-    const canvas = await html2canvas(el, {
+  // 用第一页确定 PDF 尺寸
+  const firstCanvas = await html2canvas(elements[0], {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+  })
+
+  const pdf = new jsPDF({
+    orientation,
+    unit: 'px',
+    format: [firstCanvas.width, firstCanvas.height],
+    hotfixes: ['px_scaling'],
+  })
+
+  // 第一页：截图后立即写入 PDF 并释放 canvas（避免内存峰值）
+  const imgData1 = firstCanvas.toDataURL('image/jpeg', 0.85)
+  pdf.addImage(imgData1, 'JPEG', 0, 0, firstCanvas.width, firstCanvas.height)
+
+  // 后续页：逐页截图 → 写 PDF → 释放 canvas，不累积在内存中
+  for (let i = 1; i < elements.length; i++) {
+    const canvas = await html2canvas(elements[i], {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
     })
-    canvases.push(canvas)
-  }
-
-  // 用第一页确定 PDF 尺寸
-  const firstCanvas = canvases[0]
-  const pdfWidth = firstCanvas.width
-  const pdfHeight = firstCanvas.height
-
-  const pdf = new jsPDF({
-    orientation,
-    unit: 'px',
-    format: [pdfWidth, pdfHeight],
-    hotfixes: ['px_scaling'],
-  })
-
-  // 第一页
-  const imgData1 = firstCanvas.toDataURL('image/png')
-  pdf.addImage(imgData1, 'PNG', 0, 0, pdfWidth, pdfHeight)
-
-  // 后续页
-  for (let i = 1; i < canvases.length; i++) {
-    pdf.addPage([canvases[i].width, canvases[i].height], orientation)
-    const imgData = canvases[i].toDataURL('image/png')
-    pdf.addImage(imgData, 'PNG', 0, 0, canvases[i].width, canvases[i].height)
+    pdf.addPage([canvas.width, canvas.height], orientation)
+    const imgData = canvas.toDataURL('image/jpeg', 0.85)
+    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
+    // 释放 canvas 内存
+    canvas.width = 0
+    canvas.height = 0
   }
 
   const blob = pdf.output('blob')
@@ -112,7 +114,8 @@ export async function xlsxToPdf(file, filename) {
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-    const maxCols = Math.max(...rows.map(r => r.length), 1)
+    // 用 reduce 代替 Math.max(...rows.map())，避免大表 spread 参数超限崩溃
+    const maxCols = rows.reduce((mx, r) => Math.max(mx, r.length), 1)
 
     const sheetDiv = document.createElement('div')
     sheetDiv.style.cssText = 'background:#fff;padding:30px;min-width:800px;'
@@ -237,8 +240,8 @@ export async function pptxToPdf(file, filename) {
       const images = []
       const picRegex = /<p:pic\b[\s\S]*?<\/p:pic>/g
       const blipRegex = /r:embed="(rId\d+)"/
-      const offRegex = /<p:off\s+x="(-?\d+)"\s+y="(-?\d+)"/
-      const extSizeRegex = /<p:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/
+      const offRegex = /<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/
+      const extSizeRegex = /<a:ext\s+cx="(-?\d+)"\s+cy="(-?\d+)"/
       let picMatch
       while ((picMatch = picRegex.exec(xmlStr)) !== null) {
         const block = picMatch[0]
@@ -339,8 +342,8 @@ export async function pdfToDocx(file, filename, onProgress = null) {
   const paragraphs = []
 
   for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfjsLibGetPage(pdfDoc, i)
-    const viewport = page.getViewport({ scale: 1.0 })
+    const page = await pdfDoc.getPage(i)
+    // viewport 仅用于获取页面尺寸，不在此处使用
 
     // ---- 提取文字行 ----
     const textContent = await page.getTextContent()
@@ -348,7 +351,7 @@ export async function pdfToDocx(file, filename, onProgress = null) {
     for (const item of textContent.items) {
       if (!item.str || !item.str.trim()) continue
       const y = Math.round(item.transform[5])
-      textItems.push({ type: 'text', y, str: item.str })
+      textItems.push({ type: 'text', y, x: item.transform[4], str: item.str })
     }
     // 按行分组（y 坐标相近的归为同一行）
     const textLines = groupTextByLine(textItems)
@@ -435,11 +438,6 @@ export async function pdfToDocx(file, filename, onProgress = null) {
 
 // ---- 辅助函数 ----
 
-/** 包装 getPage 以保持一致的接口 */
-async function pdfjsLibGetPage(pdfDoc, pageNum) {
-  return pdfDoc.getPage(pageNum)
-}
-
 /** 将文字 items 按 Y 坐标分组成行 */
 function groupTextByLine(textItems) {
   if (textItems.length === 0) return []
@@ -459,8 +457,8 @@ function groupTextByLine(textItems) {
       lines.push({
         y: lastY,
         str: currentLine.map(t => t.str).join(''),
-        size: Math.max(...currentLine.map(t => t.size || 0)),
-        x: Math.min(...currentLine.map(t => t.x ?? 1e9)),
+        size: currentLine.reduce((mx, t) => Math.max(mx, t.size || 0), 0),
+        x: currentLine.reduce((mn, t) => Math.min(mn, t.x ?? 1e9), 1e9),
       })
       currentLine = [item]
       lastY = item.y
@@ -471,8 +469,8 @@ function groupTextByLine(textItems) {
     lines.push({
       y: lastY,
       str: currentLine.map(t => t.str).join(''),
-      size: Math.max(...currentLine.map(t => t.size || 0)),
-      x: Math.min(...currentLine.map(t => t.x ?? 1e9)),
+      size: currentLine.reduce((mx, t) => Math.max(mx, t.size || 0), 0),
+      x: currentLine.reduce((mn, t) => Math.min(mn, t.x ?? 1e9), 1e9),
     })
   }
   return lines
@@ -902,7 +900,7 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
         flushSubtitle()
         subtitleLines = null
         // 图片按页面宽度比例缩放到 100%
-        html += `<p class="ebook-img"><img recindex="${item.recindex}" width="100%" alt=""/></p>\n`
+        html += `<p class="ebook-img"><img recindex="${item.recindex}" width="${item.width}" height="${item.height}"></p>\n`
       }
     }
     flushPara()

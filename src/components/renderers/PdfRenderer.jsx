@@ -10,6 +10,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 const RENDER_SCALE = 1.0
 // 虚拟滚动：视口外上下各多渲染几页作为缓冲
 const BUFFER_PAGES = 1
+// canvas 駐留上限：超过后释放旧页 canvas，避免内存无限增长
+const MAX_RENDERED_PAGES = 20
 
 export default function PdfRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
@@ -38,14 +40,14 @@ export default function PdfRenderer() {
       pdfDocRef.current = pdfDoc
       setNumPages(pdfDoc.numPages)
 
-      // 获取每页高度（只用第 1 页确定宽度，各页高度可能不同）
-      const heights = []
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i)
-        const viewport = page.getViewport({ scale: RENDER_SCALE })
-        heights.push(viewport.height)
-        if (i === 1) pageWidthRef.current = viewport.width
-      }
+      // 首屏优化：只取第 1 页高度确定页宽，大 PDF 不必逐页 getPage
+      const firstPage = await pdfDoc.getPage(1)
+      const firstViewport = firstPage.getViewport({ scale: RENDER_SCALE })
+      pageWidthRef.current = firstViewport.width
+
+      // 估算每页高度：第 1 页实际高度，其余用第 1 页高度近似
+      // （滚动时按实际内容自适应，不影响虚拟滚动的占位）
+      const heights = new Array(pdfDoc.numPages).fill(firstViewport.height)
       setPageHeights(heights)
       setLoading(false)
       setPreviewStatus('ready')
@@ -117,7 +119,7 @@ export default function PdfRenderer() {
     }
   }, [])
 
-  // 4. visibleRange 变化时触发渲染
+  // 4. visibleRange 变化时触发渲染 + 清理超出上限的旧 canvas
   useEffect(() => {
     if (loading || numPages === 0) return
     for (let i = visibleRange.start; i <= visibleRange.end; i++) {
@@ -126,6 +128,20 @@ export default function PdfRenderer() {
         renderPage(pageNum)
       }
     }
+
+    // 清理超出 MAX_RENDERED_PAGES 的旧 canvas，释放内存
+    setRenderedPages(prev => {
+      const keys = Object.keys(prev).map(Number).sort((a, b) => a - b)
+      if (keys.length <= MAX_RENDERED_PAGES) return prev
+      const toRemove = keys.slice(0, keys.length - MAX_RENDERED_PAGES)
+      const next = { ...prev }
+      for (const k of toRemove) {
+        const canvas = next[k]
+        if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas)
+        delete next[k]
+      }
+      return next
+    })
   }, [visibleRange, loading, numPages, renderedPages, renderPage])
 
   // 5. 初始加载

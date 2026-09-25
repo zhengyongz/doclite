@@ -58,3 +58,4 @@ pnpm-debug.log*
 .parcel-cache/
 coverage/
 *.local
+.workbuddy/

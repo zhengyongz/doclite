@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useFileStore } from '../../context/FileContext'
+import DOMPurify from 'dompurify'
 
 /**
  * Azw3Renderer — AZW3 / MOBI 电子书预览渲染器
  *
  * 使用 foliate-js 的 MOBI 类解析 PDB/MOBI/KF8 格式，
- * 逐 section 提取 HTML 内容，渲染到滚动容器中。
+ * 逐 section 提取 HTML 内容，DOMPurify 消毒后渲染到滚动容器中。
  * 支持目录跳转、封面显示、元数据展示。
  */
 export default function Azw3Renderer() {
@@ -18,6 +19,7 @@ export default function Azw3Renderer() {
 
   const containerRef = useRef(null)
   const bookRef = useRef(null)
+  const coverUrlRef = useRef(null) // 用 ref 跟踪 coverUrl，确保 cleanup 能正确释放
 
   // 加载并解析电子书
   const loadBook = useCallback(async () => {
@@ -39,7 +41,10 @@ export default function Azw3Renderer() {
       let coverUrl = null
       try {
         const coverBlob = await book.getCover()
-        if (coverBlob) coverUrl = URL.createObjectURL(coverBlob)
+        if (coverBlob) {
+          coverUrl = URL.createObjectURL(coverBlob)
+          coverUrlRef.current = coverUrl
+        }
       } catch (e) {
         console.warn('[Azw3Renderer] getCover failed:', e)
       }
@@ -83,7 +88,13 @@ export default function Azw3Renderer() {
         html = serializer.serializeToString(doc)
       }
 
-      setSectionContents(prev => ({ ...prev, [index]: html }))
+      // DOMPurify 消毒：防止恶意构造的 MOBI 注入脚本
+      const cleanHtml = DOMPurify.sanitize(html, {
+        ADD_TAGS: ['mbp:pagebreak'],
+        ADD_ATTR: ['recindex', 'filepos', 'mediarecindex', 'href'],
+      })
+
+      setSectionContents(prev => ({ ...prev, [index]: cleanHtml }))
     } catch (err) {
       console.error(`[Azw3Renderer] section ${index} render error:`, err)
       setSectionContents(prev => ({ ...prev, [index]: '<p style="color:#999;text-align:center;padding:20px;">本章节渲染失败</p>' }))
@@ -111,10 +122,13 @@ export default function Azw3Renderer() {
     }
   }, [status, bookData, currentSection, renderSection])
 
-  // 清理
+  // 清理：用 ref 正确释放 coverUrl（修复原闭包捕获旧值导致泄漏的 bug）
   useEffect(() => {
     return () => {
-      if (bookData?.coverUrl) URL.revokeObjectURL(bookData.coverUrl)
+      if (coverUrlRef.current) {
+        URL.revokeObjectURL(coverUrlRef.current)
+        coverUrlRef.current = null
+      }
       bookRef.current = null
     }
   }, [])
@@ -147,7 +161,6 @@ export default function Azw3Renderer() {
   const { sections, toc, metadata, coverUrl } = bookData
   const scale = zoomLevel / 100
   const totalSections = sections.length
-  const linearSections = sections.filter(s => s.linear !== 'no')
 
   // TOC 递归渲染
   const renderTocItem = (item, depth = 0) => {
@@ -157,15 +170,7 @@ export default function Azw3Renderer() {
         <button
           onClick={() => {
             if (item.href) {
-              // href 格式: "kindle:pos:fid:xxx:off:yyy" 或 index
-              // 找到对应的 section index
-              const sectionIdx = sections.findIndex((s, i) => {
-                if (s.id !== undefined) return false // 需要更精确的匹配
-                return false
-              })
-              // 简化处理：TOC href 中可能包含 section index
-              // 对 KF8，href 是 pos URI，需要 resolveHref
-              // 这里先尝试解析为数字
+              // 尝试解析为数字 index
               const idx = parseInt(item.href, 10)
               if (!isNaN(idx) && idx >= 0 && idx < totalSections) {
                 setCurrentSection(idx)
@@ -305,7 +310,7 @@ export default function Azw3Renderer() {
               </div>
             )}
 
-            {/* Section HTML 内容 */}
+            {/* Section HTML 内容（已通过 DOMPurify 消毒） */}
             {sectionContents[currentSection] !== undefined ? (
               <div
                 className="ebook-content"

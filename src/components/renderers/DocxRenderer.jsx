@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { renderAsync } from 'docx-preview'
 import { useFileStore } from '../../context/FileContext'
 
@@ -9,17 +9,7 @@ export default function DocxRenderer() {
 
   const renderDoc = useCallback(async () => {
     if (!currentFile?.file) return
-
-    // Wait for container div to exist in DOM
-    let attempts = 0
-    while (!containerRef.current && attempts < 20) {
-      await new Promise(r => setTimeout(r, 50))
-      attempts++
-    }
-    if (!containerRef.current) {
-      console.error('[DocxRenderer] container not found')
-      return
-    }
+    if (!containerRef.current) return
 
     try {
       setPreviewStatus('loading')
@@ -47,7 +37,8 @@ export default function DocxRenderer() {
     }
   }, [currentFile, setPreviewStatus, setError])
 
-  useEffect(() => {
+  // useLayoutEffect 确保 DOM 已挂载再渲染（替代原来的 50ms 轮询等待）
+  useLayoutEffect(() => {
     renderDoc()
   }, [renderDoc])
 

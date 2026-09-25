@@ -25,7 +25,7 @@ export default function XlsxRenderer() {
     try {
       setPreviewStatus('loading')
       const arrayBuffer = await currentFile.file.arrayBuffer()
-      const workbook = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true })
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
 
       const parsed = workbook.SheetNames.map((name) => {
         const ws = workbook.Sheets[name]
@@ -55,7 +55,7 @@ export default function XlsxRenderer() {
   }
 
   const sheet = sheets[activeIdx]
-  const maxCols = Math.max(...sheets.map(s => Math.max(...s.rows.map(r => r.length), 0)), 1)
+  const maxCols = sheets.reduce((mx, s) => s.rows.reduce((m, r) => Math.max(m, r.length), mx), 1)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback } from 'react'
+import { createContext, useContext, useReducer, useCallback, useMemo } from 'react'
 
 // ---------- Initial state ----------
 const initialState = {
@@ -69,7 +69,7 @@ export function FileProvider({ children }) {
   }
 
   return (
-    <FileContext.Provider value={{ ...state, ...actions }}>
+    <FileContext.Provider value={useMemo(() => ({ ...state, ...actions }), [state, actions])}>
       {children}
     </FileContext.Provider>
   )

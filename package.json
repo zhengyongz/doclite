@@ -19,6 +19,7 @@
     "@mdgate/mobi": "^0.6.25",
     "docx": "^9.7.1",
     "docx-preview": "^0.4.0",
+    "dompurify": "^3.4.16",
     "foliate-js": "^1.0.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
@@ -39,86 +40,86 @@
     "vite": "^6.0.7"
   },
   "build": {
-      "appId": "com.doclite.app",
-      "productName": "DocLite",
-      "directories": {
-        "output": "release"
+    "appId": "com.doclite.app",
+    "productName": "DocLite",
+    "directories": {
+      "output": "release"
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF 文档",
+        "description": "PDF 文档",
+        "role": "Viewer",
+        "mimeType": "application/pdf"
       },
-      "fileAssociations": [
+      {
+        "ext": "mobi",
+        "name": "Kindle 电子书",
+        "description": "MOBI 电子书",
+        "role": "Viewer",
+        "mimeType": "application/x-mobipocket-ebook"
+      },
+      {
+        "ext": "azw3",
+        "name": "Kindle 电子书",
+        "description": "AZW3 电子书",
+        "role": "Viewer",
+        "mimeType": "application/vnd.amazon.ebook"
+      },
+      {
+        "ext": "docx",
+        "name": "Word 文档",
+        "description": "Word 文档",
+        "role": "Viewer",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      {
+        "ext": "xlsx",
+        "name": "Excel 表格",
+        "description": "Excel 表格",
+        "role": "Viewer",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "ext": "pptx",
+        "name": "PPT 幻灯片",
+        "description": "PowerPoint 幻灯片",
+        "role": "Viewer",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/**/*"
+    ],
+    "win": {
+      "target": [
         {
-          "ext": "pdf",
-          "name": "PDF 文档",
-          "description": "PDF 文档",
-          "role": "Viewer",
-          "mimeType": "application/pdf"
-        },
-        {
-          "ext": "mobi",
-          "name": "Kindle 电子书",
-          "description": "MOBI 电子书",
-          "role": "Viewer",
-          "mimeType": "application/x-mobipocket-ebook"
-        },
-        {
-          "ext": "azw3",
-          "name": "Kindle 电子书",
-          "description": "AZW3 电子书",
-          "role": "Viewer",
-          "mimeType": "application/vnd.amazon.ebook"
-        },
-        {
-          "ext": "docx",
-          "name": "Word 文档",
-          "description": "Word 文档",
-          "role": "Viewer",
-          "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        },
-        {
-          "ext": "xlsx",
-          "name": "Excel 表格",
-          "description": "Excel 表格",
-          "role": "Viewer",
-          "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        },
-        {
-          "ext": "pptx",
-          "name": "PPT 幻灯片",
-          "description": "PowerPoint 幻灯片",
-          "role": "Viewer",
-          "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "files": [
-        "dist/**/*",
-        "electron/**/*",
-        "build/**/*"
-      ],
-      "win": {
-        "target": [
-          {
-            "target": "nsis",
-            "arch": [
-              "x64"
-            ]
-          }
-        ],
-        "icon": "build/icon.ico",
-        "artifactName": "${productName}-${version}-Setup.${ext}"
-      },
-      "nsis": {
-        "oneClick": true,
-        "perMachine": false,
-        "allowElevation": true,
-        "createDesktopShortcut": true,
-        "createStartMenuShortcut": true,
-        "shortcutName": "轻快文档工具箱",
-        "installerIcon": "build/icon.ico",
-        "uninstallerIcon": "build/icon.ico",
-        "installerHeaderIcon": "build/icon.ico",
-        "deleteAppDataOnUninstall": false,
-        "runAfterFinish": true
-      },
-      "linux": {
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "轻快文档工具箱",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "linux": {
       "target": [
         {
           "target": "deb",
