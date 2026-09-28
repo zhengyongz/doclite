@@ -1,7 +1,7 @@
 {
   "name": "doclite",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "轻快文档工具箱 - Word/Excel/PPT/PDF 本地预览与格式转换",
   "author": "doclite",
   "main": "electron/main.cjs",

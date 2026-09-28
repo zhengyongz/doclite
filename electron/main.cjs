@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { registerUpdater } = require('./updater.cjs')
 
 // GPU 兼容性开关（保留 --no-sandbox 用于 Electron 渲染进程兼容性）
 app.commandLine.appendSwitch('disable-gpu-sandbox')
@@ -85,6 +86,9 @@ function createWindow() {
   return win
 }
 
+// IPC：当前应用版本号（侧边栏"版本信息"展示用）
+ipcMain.handle('app:get-version', () => app.getVersion())
+
 // IPC：renderer 拉取待打开文件（读 Buffer 后清空，避免重复加载）
 ipcMain.handle('doclite:get-open-file', async () => {
   if (pendingFilePath == null) return null
@@ -106,6 +110,29 @@ ipcMain.handle('doclite:get-open-file', async () => {
 
 app.whenReady().then(() => {
   mainWindow = createWindow()
+
+  // 自动升级模块：注册 IPC（检查/下载/剪贴板/打开安装包）+ 启动 3 秒后静默检查
+  registerUpdater()
+
+  // 冒烟测试模式（DOCLITE_SMOKE=1，仅源码环境）：转发渲染层日志，6 秒时截图后自动退出，用于无头回归验证
+  if (process.env.DOCLITE_SMOKE === '1' && !app.isPackaged) {
+    mainWindow.webContents.on('console-message', (_e, _level, message) => {
+      console.log('[renderer]', message)
+    })
+    setTimeout(async () => {
+      try {
+        const img = await mainWindow.webContents.capturePage()
+        const out = path.join(app.getPath('temp'), 'doclite-smoke.png')
+        fs.mkdirSync(path.dirname(out), { recursive: true })
+        fs.writeFileSync(out, img.toPNG())
+        console.log('[smoke] 截图已保存:', out)
+      } catch (e) {
+        console.log('[smoke] 截图失败:', e.message)
+      }
+      console.log('[smoke] 完成，正常退出')
+      app.quit()
+    }, 6000)
+  }
 
   // macOS open-file 事件处理
   app.on('open-file', (e, filePath) => {

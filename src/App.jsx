@@ -7,6 +7,8 @@ import PreviewToolbar from './components/PreviewToolbar'
 import PreviewViewport from './components/PreviewViewport'
 import ConvertPanel from './components/ConvertPanel'
 import ErrorToast from './components/ErrorToast'
+import UpdateDialog from './components/UpdateDialog'
+import { useUpdater } from './useUpdater'
 import { useEffect, useRef } from 'react'
 import { getExtension } from './utils/fileHelpers'
 
@@ -55,6 +57,7 @@ function useOpenFileFromArgs() {
 // ---------- Main layout (needs context) ----------
 function AppBody() {
   const { currentFile } = useFileStore()
+  const updater = useUpdater()
   useOpenFileFromArgs()
 
   return (
@@ -66,7 +69,7 @@ function AppBody() {
         <div className="flex flex-col gap-4 p-4 overflow-y-auto overflow-x-hidden border-r border-ink-100 bg-ink-50 lg:w-80 shrink-0 max-w-full lg:max-w-80">
           <UploadZone />
           {currentFile && <ConvertPanel />}
-          <Sidebar />
+          <Sidebar updater={updater} />
         </div>
 
         {/* ---- Right panel (preview + convert) ---- */}
@@ -84,6 +87,9 @@ function AppBody() {
 
       {/* Global error toast */}
       <ErrorToast />
+
+      {/* 自动更新弹窗 */}
+      <UpdateDialog updater={updater} />
     </div>
   )
 }

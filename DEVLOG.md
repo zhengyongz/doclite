@@ -99,4 +99,56 @@ npm run build && npx electron-builder --win nsis
 - 移除过时入口文件 electron/main.js、根目录 main.cjs
 - 修正 package.json electron:dev 脚本指向 main.cjs
 
+## 自动升级功能（2026-09-28）
+
+零第三方依赖的轻量升级方案，基于 GitHub Releases：
+
+- **electron/updater.cjs**：检查更新（net.request 请求 `/releases/latest`）、语义化版本比对、按平台选资产（win32→Setup.exe / linux→amd64.deb）、流式下载（背压写盘防内存峰值、空闲超时、大小完整性校验、失败自动清理）、进度经 IPC 推送
+- **main.cjs**：ready 后注册升级 IPC；启动 3 秒后静默检查，发现新版才通知渲染层（不打扰）
+- **preload.cjs**：暴露 checkUpdate / startDownload / copyInstallCmd / openInstaller / onUpdateStatus
+- **前端**：useUpdater hook（App.jsx 集成）+ 侧边栏底部"版本信息"卡片（显示版本号 + 检查更新按钮，有新版时高亮+徽标）+ UpdateDialog 弹窗（版本/更新说明/下载进度/Linux sudo dpkg 安装引导/Windows 直接启动安装器）
+- **安装方式**：Windows 打开 NSIS 安装包；Linux 需 sudo 权限，弹窗提供可复制的 `sudo dpkg -i` 命令（系统限制，无法免密自动装）
+- **容错**：GitHub 访问失败（大陆网络常见 504/连接重置）静默跳过或提示重试，不影响正常使用
+
+> 注意：实测 Electron 33 的 `net.fetch` 在部分网络环境对 GitHub 返回 504，故使用经典 `net.request` 实现。
+
+### 验证记录
+
+- 单元测试 10/10 通过（版本比较 / 资产选择）
+- 真实 GitHub API 检查成功（解析 v0.2.0、正确判定"已是最新"）
+- 本地服务器端到端下载 20MB：精确落盘、进度推送 20 次、完成事件、失败清理均正常
+- DOCLITE_SMOKE=1 冒烟模式：真实应用启动渲染无错误、6 秒截图验证 UI 正常
+
+### workbuddy 审查修复（2026-09-28）
+
+审查结论：核心设计（背压/互斥/转义/零依赖/安全基线）全部确认无问题；按报告修复 12 项：
+
+- **H1/M1（安全）**：`open-installer` / `copy-install-cmd` 改为**主进程记账**（`lastDownloaded`），升级 IPC 一律不接受渲染层传入的路径/命令，杜绝"沙箱点火"通道
+- **M2**：下载防重入（hook 同步锁 `startingRef` + 忽略"下载已在进行中"错误，消除快速双击闪红）
+- **M3**：手动检查走 60s TTL 缓存（不再 force 绕缓存）、403/429 专属文案、检查中按钮禁用
+- **M4**：下载大小硬上限（期望 ×1.1，未知按 500MB 兜底）+ content-length 与预期严重不符提前拒绝，防无限写盘
+- **L1**：`compareVersions` 支持预发布号（`0.3.0-beta < 0.3.0`）
+- **L2**：状态推送懒取 `BrowserWindow.getAllWindows()[0]`，窗口重建后自动指向新窗口
+- **L3**：content-length 响应头显式处理数组形态
+- **L4**：下载前清理历史同类型安装包
+- **L5**：冒烟截图改 `app.getPath('temp')` + 仅 `!app.isPackaged` 启用
+- **L7**：可选 sha256 完整性校验（Release 附带 `<资产>.sha256` 即自动启用，旧版本无则跳过）
+- 顺带修复：`req.destroy(err)` 在 response 回调中不保证触发 error 事件导致 Promise 挂起的隐患，改为直接 reject + 关闭连接
+
+### 审查后回归验证
+
+- 单元测试 14/14（新增预发布/异常输入用例）
+- 本地端到端 9/9：正常下载+旧包清理、sha256 成功/失败、M4 两种拒绝路径、失败残留清理
+- vite build + DOCLITE_SMOKE 冒烟（截图至 /tmp）+ deb 打包（95M，asar 含新模块）全部通过
+
+> AI生成
+
+## v0.3.0 发布（2026-09-28）
+
+- 新增自动升级功能（自研轻量、零依赖、GitHub Releases）
+- 侧边栏底部新增"版本信息"卡片（版本号 + 检查更新入口）
+- 新增 `app:get-version` IPC 供渲染层获取应用版本号
+- workbuddy 审查 12 项问题全部修复
+- Linux deb + Windows Setup.exe 双平台发布
+
 > AI生成

@@ -1,8 +1,13 @@
 import { useFileStore } from '../context/FileContext'
 import { getExtension, FORMAT_META } from '../utils/fileHelpers'
 
-export default function Sidebar() {
+// Sidebar：左侧信息栏。updater 由 App 传入（与 UpdateDialog 共享同一状态实例）
+export default function Sidebar({ updater }) {
   const { currentFile } = useFileStore()
+
+  const hasUpdate = updater?.phase === 'available'
+  const checking = updater?.phase === 'checking'
+  const latestVersion = updater?.info?.latestVersion || ''
 
   // Show quick format summary when a file is loaded
   const ext = currentFile ? getExtension(currentFile.name) : ''
@@ -10,8 +15,6 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col gap-4 min-w-0">
-      {/* Upload zone is injected by App via children or composed separately */}
-
       {/* Quick stats — only visible when a file is loaded */}
       {currentFile && meta && (
         <div className="p-3 rounded-lg bg-white border border-ink-200 shadow-soft">
@@ -44,6 +47,31 @@ export default function Sidebar() {
               {ext} — {m.label}
             </span>
           ))}
+        </div>
+      </div>
+
+      {/* Version & update */}
+      <div className={`p-3 rounded-lg shadow-soft ${hasUpdate ? 'bg-accent-50 border border-accent-200' : 'bg-white border border-ink-200'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">版本信息</p>
+          {hasUpdate && (
+            <span className="px-1.5 py-0.5 rounded-full bg-accent-500 text-white text-[10px] font-semibold">
+              发现新版本 v{latestVersion}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium text-ink-700">
+            {updater?.appVersion ? `v${updater.appVersion}` : ''}
+          </span>
+          <button
+            onClick={updater?.openDialog}
+            disabled={checking}
+            className="px-2.5 py-1 rounded-lg bg-ink-900 text-white text-[11px] font-medium hover:bg-ink-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            title="检查是否有新版本"
+          >
+            {checking ? '检查中…' : hasUpdate ? '查看更新' : '检查更新'}
+          </button>
         </div>
       </div>
     </aside>
