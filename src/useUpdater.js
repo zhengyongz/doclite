@@ -5,10 +5,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function useUpdater() {
   const [open, setOpen] = useState(false) // 弹窗开关（关闭不销毁状态，进度保留）
-  const [phase, setPhase] = useState('idle') // idle|checking|available|upToDate|error|downloading|ready
+  const [phase, setPhase] = useState('idle') // idle|checking|available|upToDate|error|downloading|ready|installing|installed
   const [info, setInfo] = useState(null) // { currentVersion, latestVersion, publishedAt, releaseNotes, platform, asset }
   const [progress, setProgress] = useState(null) // { received, total }
   const [errorMsg, setErrorMsg] = useState('')
+  const [installNote, setInstallNote] = useState('') // 一键安装反馈（取消/失败提示，不切 error 态）
   const [filePath, setFilePath] = useState(null)
   const [appVersion, setAppVersion] = useState('') // 当前应用版本号（侧边栏"版本信息"展示用）
   const startingRef = useRef(false) // M2：同步防重入锁（React state 更新有延迟，不能只靠 phase）
@@ -88,9 +89,32 @@ export function useUpdater() {
     window.doclite?.openInstaller?.()
   }, [])
 
+  // 一键安装（Linux pkexec）：安装中锁定按钮，取消/失败回到 ready 态并提示（保留命令兑底）
+  const install = useCallback(async () => {
+    if (startingRef.current) return
+    startingRef.current = true
+    setInstallNote('')
+    try {
+      setPhase('installing')
+      const r = await window.doclite?.installUpdate?.()
+      if (r?.ok) {
+        setPhase('installed')
+      } else {
+        setPhase('ready')
+        setInstallNote(r?.error || '安装未完成')
+      }
+    } finally {
+      startingRef.current = false
+    }
+  }, [])
+
+  const relaunch = useCallback(() => {
+    window.doclite?.relaunchApp?.()
+  }, [])
+
   return {
     open, setOpen,
-    phase, info, progress, errorMsg, filePath, appVersion,
-    check, download, openDialog, copyInstallCmd, openInstaller,
+    phase, info, progress, errorMsg, filePath, appVersion, installNote,
+    check, download, openDialog, copyInstallCmd, openInstaller, install, relaunch,
   }
 }

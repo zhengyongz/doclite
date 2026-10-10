@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld('doclite', {
   copyInstallCmd: () => ipcRenderer.invoke('updater:copy-install-cmd'),
   // 打开主进程记账的安装包（Windows 启动安装器 / Linux 在文件管理器中显示）
   openInstaller: () => ipcRenderer.invoke('updater:open-installer'),
+  // 一键安装（Linux）：pkexec 提权，系统弹原生密码框，返回 { ok, cancelled?, error? }
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  // 安装成功后重启应用加载新版本
+  relaunchApp: () => ipcRenderer.invoke('updater:relaunch'),
   // 订阅升级状态：{ type: 'check-result'|'available'|'downloading'|'downloaded'|'error', ... }
   onUpdateStatus: (cb) => {
     const listener = (_e, status) => cb(status)

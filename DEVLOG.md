@@ -183,4 +183,15 @@ npm run build && npx electron-builder --win nsis
 - workbuddy 审查 10 项问题（4 中 + 6 低）全部修复
 - Linux deb 发布（Windows 安装包待 Win 机构建后补传）
 
+## v0.4.1 Linux 一键安装（2026-10-10）
+
+升级体验改进：Linux 下载完成后从"复制命令到终端手动安装"升级为"一键安装"——
+
+- **updater.cjs** 新增 `updater:install` IPC：`pkexec dpkg -i <主进程记账路径>`（PolicyKit 提权，系统弹出原生图形密码框，全程无需终端）；错误分类处理（ENOENT→缺 pkexec 提示 / 126,127→已取消 / 其他→显示 dpkg 错误摘要）
+- 新增 `updater:relaunch` IPC：安装成功后 `app.relaunch()` 一键重启加载新版本
+- **UpdateDialog**（Linux ready 态）重构：主按钮"立即安装（自动弹出密码框）"→ 安装中提示"请在系统弹出的密码框中输入密码" → 成功态"✓ 安装成功 + 立即重启"；原终端命令收纳为"安装失败？可改用终端命令手动安装"折叠兜底（保留复制能力）
+- Windows 体验不变（打开安装器本就一键）；复用下载互斥锁防重复点击
+- 验证：pkexec 错误路径单测 2/2（ENOENT/127 分类）、build + 冒烟无错误
+- 注：本功能自 0.4.1 起生效，0.3.0/0.4.0 升级到 0.4.1 仍需手动安装最后一次；此后所有升级均为一键
+
 > AI生成

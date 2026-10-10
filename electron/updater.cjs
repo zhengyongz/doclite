@@ -7,6 +7,7 @@ const { app, net, ipcMain, clipboard, shell, BrowserWindow } = require('electron
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const { execFile } = require('child_process')
 
 const REPO = 'zhengyongz/doclite'
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`
@@ -320,6 +321,39 @@ function registerUpdater() {
       return true
     }
     await shell.openPath(lastDownloaded)
+    return true
+  })
+
+  // 一键安装（Linux）：pkexec 提权执行 dpkg，系统弹出原生图形密码框，全程无需终端
+  // 安全：仅安装主进程记账的 lastDownloaded，路径不跨信任边界；pkexec 由 PolicyKit 管理授权
+  ipcMain.handle('updater:install', () => {
+    if (process.platform !== 'linux') {
+      return Promise.resolve({ ok: false, error: '当前平台不支持一键安装' })
+    }
+    if (!lastDownloaded || !fs.existsSync(lastDownloaded)) {
+      return Promise.resolve({ ok: false, error: '未找到已下载的安装包，请先下载更新' })
+    }
+    return new Promise((resolve) => {
+      execFile('pkexec', ['dpkg', '-i', lastDownloaded], (err, _stdout, stderr) => {
+        if (!err) { resolve({ ok: true }); return }
+        if (err.code === 'ENOENT') {
+          resolve({ ok: false, error: '系统缺少 pkexec（PolicyKit），请改用下方命令手动安装' })
+        } else if (err.code === 126 || err.code === 127) {
+          // 126：用户取消密码框或未授权；127：pkexec 内找不到命令
+          resolve({ ok: false, cancelled: true, error: err.code === 127 ? '无法调用 dpkg，请改用下方命令手动安装' : '已取消安装' })
+        } else {
+          const detail = String(stderr || '')
+            .split('\n').filter(Boolean).slice(-2).join(' ') || `退出码 ${err.code}`
+          resolve({ ok: false, error: '安装失败：' + detail })
+        }
+      })
+    })
+  })
+
+  // 安装成功后重启应用加载新版本
+  ipcMain.handle('updater:relaunch', () => {
+    app.relaunch()
+    app.exit(0)
     return true
   })
 

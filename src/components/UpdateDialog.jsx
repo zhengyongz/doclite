@@ -19,13 +19,14 @@ function fmtDate(iso) {
 }
 
 export default function UpdateDialog({ updater }) {
-  const { open, phase, info, progress, errorMsg, filePath, setOpen, check, download, copyInstallCmd, openInstaller } = updater
+  const { open, phase, info, progress, errorMsg, filePath, installNote, setOpen, check, download, copyInstallCmd, openInstaller, install, relaunch } = updater
 
   const isLinux = useMemo(() => info?.platform === 'linux', [info])
 
   if (!open) return null
 
   const installCmd = filePath ? `sudo dpkg -i "${filePath}"` : ''
+  const showReadyUi = phase === 'ready' || phase === 'installing' || phase === 'installed'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" onClick={() => setOpen(false)}>
@@ -114,41 +115,90 @@ export default function UpdateDialog({ updater }) {
             </div>
           )}
 
-          {phase === 'ready' && (
+          {showReadyUi && (
             <div className="py-4">
-              <p className="text-sm text-ink-700">v{info?.latestVersion} 已下载完成</p>
-              {isLinux ? (
-                <div className="mt-3">
-                  <p className="text-xs text-ink-500 mb-1.5">
+              {phase === 'installed' ? (
+                /* —— 安装完成：一键重启 —— */
+                <div>
+                  <p className="text-sm font-medium text-green-600">✓ v{info?.latestVersion} 安装成功</p>
+                  <p className="text-xs text-ink-400 mt-1">重启应用后新版本即可生效。</p>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>稍后重启</button>
+                    <button
+                      className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600"
+                      onClick={relaunch}
+                    >
+                      立即重启
+                    </button>
+                  </div>
+                </div>
+              ) : isLinux ? (
+                /* —— Linux：一键安装（pkexec 弹系统密码框）+ 命令兑底 —— */
+                <div>
+                  <p className="text-sm text-ink-700">v{info?.latestVersion} 已下载完成</p>
+                  <p className="text-xs text-ink-500 mt-1.5">
                     文件已保存至：<span className="text-ink-700 break-all">{filePath}</span>
                   </p>
-                  <p className="text-xs text-ink-500 mb-1.5">Linux 安装需管理员权限，请在终端执行：</p>
-                  <div className="flex items-center gap-2 rounded-lg bg-ink-50 border border-ink-200 p-2">
-                    <code className="flex-1 text-xs text-ink-800 break-all font-mono">{installCmd}</code>
+                  {phase === 'installing' ? (
+                    <div className="mt-3 flex items-center gap-2 rounded-lg bg-accent-50 border border-accent-200 px-3 py-2.5">
+                      <span className="w-4 h-4 rounded-full border-2 border-accent-500 border-t-transparent animate-spin" />
+                      <span className="text-xs text-accent-700">正在安装，请在系统弹出的密码框中输入密码…</span>
+                    </div>
+                  ) : (
+                    <>
+                      {installNote && (
+                        <p className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">{installNote}</p>
+                      )}
+                      <div className="mt-3">
+                        <button
+                          className="w-full px-3 py-2 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600 transition"
+                          onClick={install}
+                        >
+                          立即安装（自动弹出密码框）
+                        </button>
+                      </div>
+                      <details className="mt-2">
+                        <summary className="text-[11px] text-ink-400 cursor-pointer select-none hover:text-ink-600">安装失败？可改用终端命令手动安装</summary>
+                        <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-ink-50 border border-ink-200 p-2">
+                          <code className="flex-1 text-xs text-ink-800 break-all font-mono">{installCmd}</code>
+                          <button
+                            className="px-2 py-1 rounded bg-ink-900 text-white text-[11px] hover:bg-ink-700 shrink-0"
+                            onClick={() => copyInstallCmd()}
+                          >
+                            复制
+                          </button>
+                        </div>
+                      </details>
+                    </>
+                  )}
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>关闭</button>
                     <button
-                      className="px-2 py-1 rounded bg-ink-900 text-white text-[11px] hover:bg-ink-700"
-                      onClick={() => copyInstallCmd()}
+                      className="px-3 py-1.5 rounded-lg bg-ink-900 text-white text-xs hover:bg-ink-700"
+                      onClick={() => openInstaller()}
                     >
-                      复制
+                      在文件管理器中查看
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="mt-3">
-                  <p className="text-xs text-ink-500 mb-1.5">
+                /* —— Windows：直接启动安装器 —— */
+                <div>
+                  <p className="text-sm text-ink-700">v{info?.latestVersion} 已下载完成</p>
+                  <p className="text-xs text-ink-500 mt-1.5">
                     文件已保存至：<span className="text-ink-700 break-all">{filePath}</span>
                   </p>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>关闭</button>
+                    <button
+                      className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600"
+                      onClick={() => openInstaller()}
+                    >
+                      打开安装程序
+                    </button>
+                  </div>
                 </div>
               )}
-              <div className="mt-4 flex justify-end gap-2">
-                <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>关闭</button>
-                <button
-                  className="px-3 py-1.5 rounded-lg bg-ink-900 text-white text-xs hover:bg-ink-700"
-                  onClick={() => openInstaller()}
-                >
-                  {isLinux ? '在文件管理器中查看' : '打开安装程序'}
-                </button>
-              </div>
             </div>
           )}
         </div>
