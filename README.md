@@ -11,7 +11,7 @@ AIGC:
 
 # 轻快文档工具箱 (DocLite)
 
-一个 Electron 桌面文档工具箱。支持 Word、Excel、PPT、PDF、MOBI/AZW3 格式的本地预览与互转，**所有文件处理均在本地完成，不上传任何服务器**。
+一个 Electron 桌面文档工具箱。支持 Word、Excel、PPT、PDF、MOBI/AZW3、Markdown 格式的本地预览与互转，**所有文件处理均在本地完成，不上传任何服务器**。
 
 ## 功能特性
 
@@ -24,6 +24,7 @@ AIGC:
 | PPT (.pptx) | JSZip 解析 XML，提取形状位置/背景色/图片，绝对定位渲染 | 50%–200% |
 | PDF (.pdf) | pdfjs-dist 逐页渲染为 Canvas | 50%–200% |
 | MOBI/AZW3 (.mobi/.azw3) | foliate-js 渲染 | 50%–200% |
+| Markdown (.md/.markdown) | marked 解析 + DOMPurify 消毒渲染，支持 GFM 表格/代码块/任务列表/锚点跳转 | 50%–200% |
 
 ### 格式转换
 
@@ -74,7 +75,7 @@ doclite
 sudo dpkg -r doclite
 ```
 
-文件关联：安装后双击 .pdf/.docx/.xlsx/.pptx/.mobi/.azw3 文件即可用 DocLite 打开。
+文件关联：安装后双击 .pdf/.docx/.xlsx/.pptx/.mobi/.azw3/.md/.markdown 文件即可用 DocLite 打开。
 
 ### Windows (NSIS)
 

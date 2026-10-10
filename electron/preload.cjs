@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('doclite', {
     return () => ipcRenderer.removeListener('doclite:open-file-changed', listener)
   },
 
+  // 用系统默认浏览器打开 http/https 外链（MD 文档内链接点击；主进程白名单校验）
+  openExternal: (url) => ipcRenderer.invoke('doclite:open-external', url),
+
   // ---------- 自动升级 ----------
   // 当前应用版本号（侧边栏"版本信息"展示用）
   getVersion: () => ipcRenderer.invoke('app:get-version'),

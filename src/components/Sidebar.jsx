@@ -43,9 +43,12 @@ export default function Sidebar({ updater }) {
         <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">支持的格式</p>
         <div className="grid grid-cols-2 gap-1.5">
           {Object.entries(FORMAT_META).map(([ext, m]) => (
-            <span key={ext} className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold ${m.color}`}>
-              {ext} — {m.label}
-            </span>
+            // .markdown 与 .md 同渲染器，合并展示避免重复徽标（workbuddy L3）
+            ext === '.markdown' ? null : (
+              <span key={ext} className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold ${m.color}`}>
+                {ext} — {m.label}
+              </span>
+            )
           ))}
         </div>
       </div>

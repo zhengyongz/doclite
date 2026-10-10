@@ -5,6 +5,7 @@ import DocxRenderer from './renderers/DocxRenderer'
 import PdfRenderer from './renderers/PdfRenderer'
 import PptxRenderer from './renderers/PptxRenderer'
 import Azw3Renderer from './renderers/Azw3Renderer'
+import MdRenderer from './renderers/MdRenderer'
 
 export default function PreviewViewport() {
   const { currentFile, zoomLevel } = useFileStore()
@@ -27,6 +28,9 @@ export default function PreviewViewport() {
       case '.azw3':
       case '.mobi':
         return <Azw3Renderer />
+      case '.md':
+      case '.markdown':
+        return <MdRenderer />
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">

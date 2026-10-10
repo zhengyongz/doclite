@@ -1,5 +1,5 @@
 // ---------- Supported formats ----------
-export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.pptx', '.pdf', '.azw3', '.mobi']
+export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.pptx', '.pdf', '.azw3', '.mobi', '.md', '.markdown']
 
 export const MIME_MAP = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
@@ -11,6 +11,8 @@ export const MIME_MAP = {
 }
 
 export const MAX_FILE_SIZE_MB = 100
+// 按格式区分大小上限（workbuddy M1）：MD 为纯主线程同步解析，超大文件会长时间阻塞 UI，故收紧
+export const MAX_FILE_SIZE_MB_BY_EXT = { '.md': 5, '.markdown': 5 }
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 // Format display metadata
@@ -21,6 +23,8 @@ export const FORMAT_META = {
   '.pdf':  { label: 'PDF',   color: 'bg-red-100 text-red-700' },
   '.azw3': { label: 'AZW3',  color: 'bg-purple-100 text-purple-700' },
   '.mobi': { label: 'MOBI',  color: 'bg-amber-100 text-amber-700' },
+  '.md':   { label: 'MD',     color: 'bg-teal-100 text-teal-700' },
+  '.markdown': { label: 'MD',  color: 'bg-teal-100 text-teal-700' },
 }
 
 // ---------- Helpers ----------
@@ -41,11 +45,13 @@ export function getExtension(filename) {
 export function validateFile(file) {
   if (!file) return '未选择任何文件'
 
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return `文件大小 (${(file.size / 1024 / 1024).toFixed(1)} MB) 超出限制（最大 ${MAX_FILE_SIZE_MB} MB）`
+  const ext = getExtension(file.name)
+  const limitMb = MAX_FILE_SIZE_MB_BY_EXT[ext] || MAX_FILE_SIZE_MB
+
+  if (file.size > limitMb * 1024 * 1024) {
+    return `文件大小 (${(file.size / 1024 / 1024).toFixed(1)} MB) 超出限制（${FORMAT_META[ext]?.label || ext} 最大 ${limitMb} MB）`
   }
 
-  const ext = getExtension(file.name)
   if (!SUPPORTED_EXTENSIONS.includes(ext)) {
     return `不支持的格式 "${ext || '未知'}"，仅支持 ${SUPPORTED_EXTENSIONS.join(' / ')}`
   }

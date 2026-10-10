@@ -1,7 +1,7 @@
 {
   "name": "doclite",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "轻快文档工具箱 - Word/Excel/PPT/PDF 本地预览与格式转换",
   "author": "doclite",
   "main": "electron/main.cjs",
@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "postinstall": "patch-package",
-    "electron:dev": "vite build && electron electron/main.cjs",
+    "electron:dev": "vite build && electron electron/main.cjs --no-sandbox",
     "electron:build": "vite build && electron-builder --linux deb",
     "electron:build:win": "vite build && electron-builder --win nsis"
   },
@@ -24,6 +24,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
+    "marked": "^18.1.0",
     "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -66,6 +67,20 @@
         "description": "AZW3 电子书",
         "role": "Viewer",
         "mimeType": "application/vnd.amazon.ebook"
+      },
+      {
+        "ext": "md",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "role": "Viewer",
+        "mimeType": "text/markdown"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "role": "Viewer",
+        "mimeType": "text/markdown"
       },
       {
         "ext": "docx",

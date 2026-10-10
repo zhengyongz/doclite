@@ -3,14 +3,15 @@ const path = require('path')
 const fs = require('fs')
 const { registerUpdater } = require('./updater.cjs')
 
-// GPU 兼容性开关（保留 --no-sandbox 用于 Electron 渲染进程兼容性）
+// GPU 兼容性开关（--no-sandbox 由 CLI 传入：electron:dev 脚本与 .desktop executableArgs，
+// 用于 Ubuntu 24.04 AppArmor 拦截 user namespace 的环境；正式 deb 由 postinst 处理 chrome-sandbox SUID）
 app.commandLine.appendSwitch('disable-gpu-sandbox')
 app.commandLine.appendSwitch('disable-software-rasterizer')
 
 // ---------- 文件关联：双击/打开方式传入的文件路径 ----------
 // 从 argv 提取待打开文件（过滤掉 Electron/Chromium 开关与隐臧 -- 开头参数）
 function extractFilePathFromArgv(argv) {
-  const supported = ['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3']
+  const supported = ['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown']
   for (const arg of argv) {
     if (arg.startsWith('-')) continue
     if (arg.endsWith('.js') || arg.endsWith('.cjs')) continue
@@ -89,6 +90,17 @@ function createWindow() {
 // IPC：当前应用版本号（侧边栏"版本信息"展示用）
 ipcMain.handle('app:get-version', () => app.getVersion())
 
+// IPC：用系统默认浏览器打开外链（MdRenderer 文档内 http/https 链接）
+// 安全：仅放行 http/https 白名单，拒绝 file:/javascript: 等自定义 scheme（workbuddy M3）
+ipcMain.handle('doclite:open-external', (_e, url) => {
+  const u = typeof url === 'string' ? url : ''
+  if (/^https?:\/\//i.test(u)) {
+    shell.openExternal(u)
+    return true
+  }
+  return false
+})
+
 // IPC：renderer 拉取待打开文件（读 Buffer 后清空，避免重复加载）
 ipcMain.handle('doclite:get-open-file', async () => {
   if (pendingFilePath == null) return null
@@ -138,7 +150,7 @@ app.whenReady().then(() => {
   app.on('open-file', (e, filePath) => {
     e.preventDefault()
     const lower = filePath.toLowerCase()
-    if (['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3'].some(ext => lower.endsWith(ext))) {
+    if (['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].some(ext => lower.endsWith(ext))) {
       pendingFilePath = filePath
       if (mainWindow) notifyRenderer()
     }

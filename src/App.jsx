@@ -29,7 +29,7 @@ function useOpenFileFromArgs() {
       const file = new File([info.data], info.name, { type: 'application/octet-stream' })
       // 校验扩展名（与上传入口一致）
       const ext = getExtension(info.name)
-      if (!['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3'].includes(ext)) {
+      if (!['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].includes(ext)) {
         setErrorRef.current(`不支持的文件类型：${info.name}`)
         return
       }

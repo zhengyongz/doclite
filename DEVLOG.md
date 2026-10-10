@@ -141,8 +141,6 @@ npm run build && npx electron-builder --win nsis
 - 本地端到端 9/9：正常下载+旧包清理、sha256 成功/失败、M4 两种拒绝路径、失败残留清理
 - vite build + DOCLITE_SMOKE 冒烟（截图至 /tmp）+ deb 打包（95M，asar 含新模块）全部通过
 
-> AI生成
-
 ## v0.3.0 发布（2026-09-28）
 
 - 新增自动升级功能（自研轻量、零依赖、GitHub Releases）
@@ -150,5 +148,39 @@ npm run build && npx electron-builder --win nsis
 - 新增 `app:get-version` IPC 供渲染层获取应用版本号
 - workbuddy 审查 12 项问题全部修复
 - Linux deb + Windows Setup.exe 双平台发布
+
+## Markdown 查看（2026-10-10）
+
+- 新增 `.md` / `.markdown` 文件预览（仅预览，不做转换），文件内文字可正常选中复制
+- 渲染链路：marked 18（GFM：表格/删除线/任务列表）→ DOMPurify 消毒 → HTML 渲染，与 Azw3Renderer 共用同一套消毒机制
+- 新增 `src/components/renderers/MdRenderer.jsx`，复用 DocxRenderer 的文档型布局（白底卡片、最大宽度 820px、支持缩放）
+- `src/index.css` 手写轻量 `.md-body` 排版样式（标题层级/嵌套列表/表格/深色代码块/引用块/任务列表勾选框，零插件依赖）
+- 接入点全覆盖：上传与拖拽（SUPPORTED_EXTENSIONS）、双击文件关联（main.cjs 参数解析 + package.json fileAssociations 注册 text/markdown）、格式徽标与侧边栏格式卡片（FORMAT_META）
+- 已验证：标题/加粗/斜体/行内代码/删除线/嵌套列表/表格/深色代码块/引用块/任务列表/链接全部渲染正常，UTF-8 BOM 自动剥离
+
+### workbuddy 审查修复（2026-10-10）
+
+审查结论：安全链路（DOMPurify 默认策略 + CSP）逐条核验无问题，无高优先级问题；按报告修复 4 中 + 6 低：
+
+- **M1**：MD 文件大小上限按格式收紧至 5MB（`MAX_FILE_SIZE_MB_BY_EXT`）+ 字符数硬兑底 2M 截断预览（防扩展名伪装），超限/截断均顶部提示条告知
+- **M2**：显式 `TextDecoder('utf-8')` 解码 + U+FFFD 占比检测，疑似非 UTF-8 时仍渲染但顶部提示条引导（原 catch 分支不可达）
+- **M3**：文档内 http/https 链接点击经新增最小 IPC `doclite:open-external`（主进程白名单校验，拒绝自定义 scheme）交系统浏览器打开，修复链接点击无反应
+- **M4**：渲染竞态 seq 守卫，快速切换文件时不再显示上一个文件内容
+- **L1**：main.cjs 注释与实际行为对齐（--no-sandbox 由 CLI 传入）
+- **L2**：markdown 系统关联注册、上传区文案、README 格式表/关联说明补齐
+- **L3**：侧边栏格式徽标合并展示（.md/.markdown 不重复出现）
+- **L4**：零依赖 heading id 注入（marked v5+ 移除了 headerIds）+ 页内锚点平滑滚动
+- **L5**：DEVLOG 结构修复，统一文末单一 AIGC 标记
+- **L6**：DOMPurify `FORBID_ATTR: ['style']` 收紧（防内联样式伪造 UI）
+
+## v0.4.0 发布（2026-10-10）
+
+- 新增 Markdown（.md / .markdown）文件预览（marked 18 + DOMPurify，GFM 全语法，文字可选中复制）
+- 文档内链接经系统浏览器打开、页内锚点平滑跳转
+- 非 UTF-8 编码与超大文件截断均有提示条引导
+- MD 大小上限 5MB（其余格式维持 100MB）
+- electron:dev 脚本追加 --no-sandbox（Ubuntu 24.04 AppArmor 环境兼容）
+- workbuddy 审查 10 项问题（4 中 + 6 低）全部修复
+- Linux deb 发布（Windows 安装包待 Win 机构建后补传）
 
 > AI生成
