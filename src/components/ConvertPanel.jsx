@@ -54,6 +54,7 @@ function SpinnerIcon({ className }) {
 
 export default function ConvertPanel() {
   const { currentFile, setError, isConverting, setConverting, setConvertProgress, convertProgress } = useFileStore()
+  const [highQuality, setHighQuality] = useState(false)
 
   if (!currentFile) return null
 
@@ -110,7 +111,7 @@ export default function ConvertPanel() {
       await convertFile(currentFile.file, ext, key, (current, total) => {
         const percent = Math.round((current / total) * 100)
         setConvertProgress(`${percent}%`)
-      })
+      }, { highQuality })
     } catch (err) {
       console.error('[ConvertPanel] conversion error:', err)
       setError(`转换失败：${err.message || '未知错误'}`)
@@ -132,6 +133,20 @@ export default function ConvertPanel() {
           </span>
         )}
       </div>
+      {conversions.some((c) => c.key === 'to-pdf') && !isConverting && (
+        <label
+          className="flex items-center gap-1.5 mb-2 cursor-pointer select-none"
+          title="标准：屏幕阅读清晰，体积小速度快；高清：约 200 DPI 打印级，体积约为标准的 2.5 倍"
+        >
+          <input
+            type="checkbox"
+            checked={highQuality}
+            onChange={(e) => setHighQuality(e.target.checked)}
+            className="accent-blue-500 w-3 h-3"
+          />
+          <span className="text-[11px] text-ink-500">高清导出（打印级，体积较大）</span>
+        </label>
+      )}
       <div className="flex flex-col gap-2">
         {conversions.map(({ key, label, description, icon: Icon, color }) => {
           const isThisConverting = isConverting

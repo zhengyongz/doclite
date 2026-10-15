@@ -7,17 +7,11 @@
  *   .pdf → .docx                  (通过 pdfjs 文本提取 → docx 包生成)
  *   .pdf → PNG                    (通过 pdfjs 逐页渲染为 PNG)
  *   .pdf → .mobi/.azw3            (通过 pdfjs 文本/图片提取 → mobiWriter 生成)
+ *
+ * 性能说明：所有重依赖（pdfjs-dist / jspdf / html2canvas / xlsx / jszip / docx / mobiWriter）
+ * 均改为"函数内动态 import()"——仅在用户实际执行转换时才加载对应代码块，浏览文档时主进程
+ * 不加载这些转换库，从而加快启动、降低常驻内存（由 Vite 自动拆分为独立 chunk）。
  */
-
-import * as pdfjsLib from 'pdfjs-dist'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
-import * as XLSX from 'xlsx'
-import JSZip from 'jszip'
-import { createMobi } from './mobiWriter'
-import {
-  Document, Packer, Paragraph, TextRun, PageBreak, ImageRun,
-} from 'docx'
 
 // ---------- 通用：触发浏览器下载 ----------
 export function downloadBlob(blob, filename) {
@@ -50,125 +44,153 @@ function stripExt(name) {
  * @param {string} filename - 输出文件名
  * @param {object} opts - { orientation: 'portrait'|'landscape', multiPage: boolean, pageElements?: HTMLElement[] }
  */
-async function elementToPdf(targetEl, filename, opts = {}) {
-  const { orientation = 'portrait', pageElements = null } = opts
+/**
+ * 创建离屏 iframe（about:blank 同源小文档），作为转换期的渲染载体。
+ *
+ * 为什么必须用 iframe：html2canvas 每次截图都会克隆"整个 ownerDocument"。
+ * 旧方案把渲染容器挂在应用主文档里，主文档还有预览区的整份文档渲染，
+ * 对 M 页文档每截一页都要克隆 ~2M 页 DOM，M 次截图 = O(M²)——
+ * 60 页实测 174 秒，数百页文档 10 分钟以上且界面冻结。
+ * iframe 是独立小文档：克隆范围不再包含应用 UI 与预览区。
+ */
+async function withOffscreenDoc(width, fn) {
+  const frame = document.createElement('iframe')
+  frame.style.cssText = `position:fixed;left:-9999px;top:0;width:${width}px;height:600px;border:0;`
+  document.body.appendChild(frame)
+  const doc = frame.contentDocument
+  // 基础排版（与主应用 Tailwind preflight 的默认字体保持一致，避免字体漂移）
+  const style = doc.createElement('style')
+  style.textContent = 'html,body{margin:0;padding:0;background:#fff;} body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;}'
+  doc.head.appendChild(style)
+  try {
+    return await fn(doc, frame)
+  } finally {
+    frame.remove()
+  }
+}
 
-  // 如果提供了多个页面元素（如多张幻灯片），逐个截图合成
-  const elements = pageElements || [targetEl]
-  if (elements.length === 0) return
+/**
+ * 通用转换管线：capture(i) 返回第 i 页的 canvas（调用方负责单页隔离与光栅化倍率），
+ * 逐页截图写 PDF 并释放 canvas，避免内存累积。
+ * onProgress(current, total) 供 UI 显示进度。
+ * quality：JPEG 压缩质量（0-1）。
+ */
+async function canvasSequenceToPdf(capture, count, filename, orientation = 'portrait', onProgress, quality = 0.75) {
+  const { default: jsPDF } = await import('jspdf')
 
-  // 用第一页确定 PDF 尺寸
-  const firstCanvas = await html2canvas(elements[0], {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: '#ffffff',
-    logging: false,
-  })
-
+  const firstCanvas = await capture(0)
   const pdf = new jsPDF({
     orientation,
     unit: 'px',
     format: [firstCanvas.width, firstCanvas.height],
     hotfixes: ['px_scaling'],
   })
+  pdf.addImage(firstCanvas.toDataURL('image/jpeg', quality), 'JPEG', 0, 0, firstCanvas.width, firstCanvas.height)
+  firstCanvas.width = 0
+  firstCanvas.height = 0
+  onProgress?.(1, count)
 
-  // 第一页：截图后立即写入 PDF 并释放 canvas（避免内存峰值）
-  const imgData1 = firstCanvas.toDataURL('image/jpeg', 0.85)
-  pdf.addImage(imgData1, 'JPEG', 0, 0, firstCanvas.width, firstCanvas.height)
-
-  // 后续页：逐页截图 → 写 PDF → 释放 canvas，不累积在内存中
-  for (let i = 1; i < elements.length; i++) {
-    const canvas = await html2canvas(elements[i], {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-    })
+  for (let i = 1; i < count; i++) {
+    const canvas = await capture(i)
     pdf.addPage([canvas.width, canvas.height], orientation)
-    const imgData = canvas.toDataURL('image/jpeg', 0.85)
-    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
+    pdf.addImage(canvas.toDataURL('image/jpeg', quality), 'JPEG', 0, 0, canvas.width, canvas.height)
     // 释放 canvas 内存
     canvas.width = 0
     canvas.height = 0
+    onProgress?.(i + 1, count)
   }
 
-  const blob = pdf.output('blob')
-  downloadBlob(blob, filename)
+  downloadBlob(pdf.output('blob'), filename)
+}
+
+// 导出质量档位：标准（默认，体积/速度优先）与 高清（打印级）
+const QUALITY_PRESETS = {
+  standard: { scale: 1.5, jpeg: 0.75 }, // 屏幕阅读清晰，体积约为高清的 40%
+  high: { scale: 2, jpeg: 0.85 },        // 约 200 DPI，打印级
+}
+function qualityPreset(highQuality) {
+  return highQuality ? QUALITY_PRESETS.high : QUALITY_PRESETS.standard
 }
 
 /**
  * Excel → PDF
  * 解析 xlsx，将每个 sheet 渲染为 HTML 表格，再转 PDF。
  */
-export async function xlsxToPdf(file, filename) {
+export async function xlsxToPdf(file, filename, onProgress = null, highQuality = false) {
+  const XLSX = await import('xlsx') // 命名空间含 read/utils
   const arrayBuffer = await file.arrayBuffer()
   const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+  const { scale, jpeg } = qualityPreset(highQuality)
 
-  // 为每个 sheet 创建临时容器
-  const container = document.createElement('div')
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;'
-  document.body.appendChild(container)
+  const sheetElements = []
 
-  const pageElements = []
+  await withOffscreenDoc(1000, async (doc) => {
+    // 在 iframe 文档内构建每个 sheet 的表格元素（不挂到主文档）
+    for (const sheetName of workbook.SheetNames) {
+      const ws = workbook.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      // 用 reduce 代替 Math.max(...rows.map())，避免大表 spread 参数超限崩溃
+      const maxCols = rows.reduce((mx, r) => Math.max(mx, r.length), 1)
 
-  for (const sheetName of workbook.SheetNames) {
-    const ws = workbook.Sheets[sheetName]
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-    // 用 reduce 代替 Math.max(...rows.map())，避免大表 spread 参数超限崩溃
-    const maxCols = rows.reduce((mx, r) => Math.max(mx, r.length), 1)
+      const sheetDiv = doc.createElement('div')
+      sheetDiv.style.cssText = 'background:#fff;padding:30px;min-width:800px;width:fit-content;'
 
-    const sheetDiv = document.createElement('div')
-    sheetDiv.style.cssText = 'background:#fff;padding:30px;min-width:800px;'
+      const title = doc.createElement('h3')
+      title.textContent = sheetName
+      title.style.cssText = 'font-family:sans-serif;font-size:16px;margin-bottom:12px;color:#333;'
+      sheetDiv.appendChild(title)
 
-    // Sheet 名称
-    const title = document.createElement('h3')
-    title.textContent = sheetName
-    title.style.cssText = 'font-family:sans-serif;font-size:16px;margin-bottom:12px;color:#333;'
-    sheetDiv.appendChild(title)
+      const table = doc.createElement('table')
+      table.style.cssText = 'border-collapse:collapse;width:100%;font-family:sans-serif;font-size:12px;'
 
-    // 表格
-    const table = document.createElement('table')
-    table.style.cssText = 'border-collapse:collapse;width:100%;font-family:sans-serif;font-size:12px;'
+      rows.forEach((row, ri) => {
+        const tr = doc.createElement('tr')
+        if (ri === 0) tr.style.cssText = 'background:#f3f4f6;font-weight:600;'
 
-    rows.forEach((row, ri) => {
-      const tr = document.createElement('tr')
-      if (ri === 0) tr.style.cssText = 'background:#f3f4f6;font-weight:600;'
+        for (let ci = 0; ci < maxCols; ci++) {
+          const val = row[ci]
+          const td = doc.createElement('td')
+          td.textContent = val === undefined || val === null ? '' : String(val)
+          td.style.cssText = 'border:1px solid #e5e7eb;padding:4px 8px;white-space:pre-wrap;max-width:300px;'
+          tr.appendChild(td)
+        }
+        table.appendChild(tr)
+      })
 
-      for (let ci = 0; ci < maxCols; ci++) {
-        const val = row[ci]
-        const td = document.createElement('td')
-        td.textContent = val === undefined || val === null ? '' : String(val)
-        td.style.cssText = 'border:1px solid #e5e7eb;padding:4px 8px;white-space:pre-wrap;max-width:300px;'
-        tr.appendChild(td)
-      }
-      table.appendChild(tr)
-    })
+      sheetDiv.appendChild(table)
+      sheetElements.push(sheetDiv)
+    }
 
-    sheetDiv.appendChild(table)
-    container.appendChild(sheetDiv)
-    pageElements.push(sheetDiv)
-  }
+    // html2canvas 在此 iframe 内动态加载（克隆范围=iframe 小文档）
+    const { default: html2canvas } = await import('html2canvas')
 
-  try {
-    await elementToPdf(null, filename, { orientation: 'landscape', pageElements })
-  } finally {
-    document.body.removeChild(container)
-  }
+    // 单页隔离：截图时 iframe DOM 只保留当前 sheet，克隆成本 O(1)
+    const capture = async (i) => {
+      doc.body.replaceChildren(sheetElements[i])
+      const canvas = await html2canvas(sheetElements[i], {
+        scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      return canvas
+    }
+
+    await canvasSequenceToPdf(capture, sheetElements.length, filename, 'landscape', onProgress, jpeg)
+  })
 }
 
 /**
  * Word (.docx) → PDF
  * 用 docx-preview 渲染到隐藏容器，再 html2canvas 截图转 PDF。
  */
-export async function docxToPdf(file, filename) {
+export async function docxToPdf(file, filename, onProgress = null, highQuality = false) {
   const { renderAsync } = await import('docx-preview')
+  const { scale, jpeg } = qualityPreset(highQuality)
 
-  const container = document.createElement('div')
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:820px;'
-  document.body.appendChild(container)
-
-  try {
-    await renderAsync(file, container, null, {
+  await withOffscreenDoc(1240, async (doc, frame) => {
+    // docx-preview 把整份文档渲染到 iframe 文档（一次性 O(M)）
+    await renderAsync(file, doc.body, null, {
       className: 'docx-page',
       inWrapper: true,
       ignoreWidth: false,
@@ -177,29 +199,43 @@ export async function docxToPdf(file, filename) {
       experimental: true,
     })
 
-    // docx-preview 渲染的每页是 .docx-page 元素
-    let pageElements = container.querySelectorAll('.docx-page')
-    if (pageElements.length === 0) {
+    let pages = Array.from(doc.body.querySelectorAll('.docx-page'))
+    if (pages.length === 0) {
       // 兜底：把整个容器作为一页
-      pageElements = [container]
+      pages = [doc.body]
     }
 
-    await elementToPdf(null, filename, {
-      orientation: 'portrait',
-      pageElements: Array.from(pageElements),
-    })
-  } finally {
-    document.body.removeChild(container)
-  }
+    const { default: html2canvas } = await import('html2canvas')
+    // host = 页面的父容器（.docx-wrapper 或 body）
+    const host = pages[0].parentNode
+
+    const waitFrame = () => new Promise((r) => frame.contentWindow.requestAnimationFrame(() => r()))
+
+    // 单页隔离：截图时 host 中只保留当前页，html2canvas 克隆成本 O(1)
+    const capture = async (i) => {
+      host.replaceChildren(pages[i])
+      await waitFrame() // 等一帧让布局/样式生效
+      return html2canvas(pages[i], {
+        scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+    }
+
+    await canvasSequenceToPdf(capture, pages.length, filename, 'portrait', onProgress, jpeg)
+  })
 }
 
 /**
  * PPT (.pptx) → PDF
  * 用 JSZip 解析 PPTX，将每页幻灯片渲染为 HTML，再转 PDF。
  */
-export async function pptxToPdf(file, filename) {
+export async function pptxToPdf(file, filename, onProgress = null, highQuality = false) {
+  const { default: JSZip } = await import('jszip')
   const arrayBuffer = await file.arrayBuffer()
   const zip = await JSZip.loadAsync(arrayBuffer)
+  const { scale, jpeg } = qualityPreset(highQuality)
 
   // 找到所有幻灯片
   const slideEntries = Object.keys(zip.files)
@@ -210,15 +246,14 @@ export async function pptxToPdf(file, filename) {
       return na - nb
     })
 
-  const container = document.createElement('div')
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;'
-  document.body.appendChild(container)
-
-  const pageElements = []
   const objectUrls = []
 
-  try {
-    for (const slidePath of slideEntries) {
+  await withOffscreenDoc(1100, async (doc) => {
+    const { default: html2canvas } = await import('html2canvas')
+
+    // 单页隔离 + 惰性构建：每张幻灯片只在截图瞬间创建 DOM，截完即移除
+    const capture = async (idx) => {
+      const slidePath = slideEntries[idx]
       const xmlStr = await zip.files[slidePath].async('string')
 
       // 提取文本
@@ -279,8 +314,8 @@ export async function pptxToPdf(file, filename) {
         }
       }
 
-      // 构建 HTML 幻灯片
-      const slideDiv = document.createElement('div')
+      // 在 iframe 文档内构建当前幻灯片
+      const slideDiv = doc.createElement('div')
       slideDiv.style.cssText = `
         width:960px;height:540px;background:#fff;position:relative;
         box-shadow:0 2px 8px rgba(0,0,0,0.1);overflow:hidden;
@@ -290,18 +325,18 @@ export async function pptxToPdf(file, filename) {
       // 图片层
       images.forEach(img => {
         if (img.url) {
-          const imgEl = document.createElement('img')
+          const imgEl = doc.createElement('img')
           imgEl.src = img.url
-          imgEl.style.cssText = `position:absolute;left:${(img.x/960)*100}%;top:${(img.y/540)*100}%;width:${(img.cx/960)*100}%;height:${(img.cy/540)*100}%;object-fit:contain;`
+          imgEl.style.cssText = `position:absolute;left:${(img.x / 960) * 100}%;top:${(img.y / 540) * 100}%;width:${(img.cx / 960) * 100}%;height:${(img.cy / 540) * 100}%;object-fit:contain;`
           slideDiv.appendChild(imgEl)
         }
       })
 
       // 文本层
-      const textLayer = document.createElement('div')
+      const textLayer = doc.createElement('div')
       textLayer.style.cssText = 'position:absolute;inset:0;padding:6%;display:flex;flex-direction:column;justify-content:center;gap:8px;'
       texts.forEach((text, i) => {
-        const p = document.createElement('p')
+        const p = doc.createElement('p')
         p.textContent = text
         if (i === 0) {
           p.style.cssText = 'font-size:24px;font-weight:bold;color:#1f2937;margin:0;'
@@ -312,19 +347,24 @@ export async function pptxToPdf(file, filename) {
       })
       slideDiv.appendChild(textLayer)
 
-      container.appendChild(slideDiv)
-      pageElements.push(slideDiv)
+      // 单页隔离：iframe DOM 中仅此一张幻灯片
+      doc.body.replaceChildren(slideDiv)
+      // 等图片布局就绪（无法 await img.load 的兜底：给一帧 + 200ms 余量首张）
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, idx === 0 ? 200 : 60)))
+
+      return html2canvas(slideDiv, {
+        scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
     }
 
-    await elementToPdf(null, filename, {
-      orientation: 'landscape',
-      pageElements,
-    })
-  } finally {
-    // 清理 object URLs
+    await canvasSequenceToPdf(capture, slideEntries.length, filename, 'landscape', onProgress, jpeg)
+  }).finally(() => {
+    // 清理图片 object URLs
     objectUrls.forEach(url => URL.revokeObjectURL(url))
-    document.body.removeChild(container)
-  }
+  })
 }
 
 // =========================================================================
@@ -336,6 +376,10 @@ export async function pptxToPdf(file, filename) {
  * 用 pdfjs 提取每页文本和图片，按位置穿插排列，用 docx 包生成 Word 文档。
  */
 export async function pdfToDocx(file, filename, onProgress = null) {
+  const [pdfjsLib, { Document, Packer, Paragraph, TextRun, PageBreak, ImageRun }] = await Promise.all([
+    import('pdfjs-dist'),
+    import('docx'),
+  ])
   const arrayBuffer = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
@@ -478,10 +522,10 @@ function groupTextByLine(textItems) {
 
 /** 从 PDF 页面提取图片对象 */
 async function extractPageImages(page) {
+  const { OPS } = await import('pdfjs-dist') // 仅需 OPS 常量，避免整库加载（调用方已加载 pdfjs）
   const images = []
   try {
     const operatorList = await page.getOperatorList()
-    const OPS = pdfjsLib.OPS
     const fnArray = operatorList.fnArray
     const argsArray = operatorList.argsArray
 
@@ -635,6 +679,10 @@ async function compressImageDataUrl(dataUrl, maxWidth = 600) {
  * 将每页 PDF 渲染为 PNG 图片，多页时打包为 ZIP 下载，单页直接下载。
  */
 export async function pdfToPng(file, filename, onProgress = null) {
+  const [pdfjsLib, { default: JSZip }] = await Promise.all([
+    import('pdfjs-dist'),
+    import('jszip'),
+  ])
   const arrayBuffer = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
   const baseName = stripExt(filename)
@@ -786,6 +834,10 @@ function looksLikeEnglishSubtitle(s) {
  * 输出 .azw3 扩展名（实际为 MOBI6 容器，Kindle 与 foliate-js 均可识别）。
  */
 export async function pdfToAzw3(file, filename, onProgress = null) {
+  const [pdfjsLib, { createMobi }] = await Promise.all([
+    import('pdfjs-dist'),
+    import('./mobiWriter'),
+  ])
   const arrayBuffer = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
@@ -1093,17 +1145,18 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
  * @param {function} onProgress - 进度回调 (current, total)
  * @returns {Promise<void>}
  */
-export async function convertFile(file, ext, targetFormat, onProgress = null) {
+export async function convertFile(file, ext, targetFormat, onProgress = null, opts = {}) {
   const baseName = stripExt(file.name)
 
   if (targetFormat === 'to-pdf') {
     const outName = `${baseName}.pdf`
+    const hq = !!(opts && opts.highQuality)
     if (ext === '.docx') {
-      await docxToPdf(file, outName)
+      await docxToPdf(file, outName, onProgress, hq)
     } else if (ext === '.xlsx') {
-      await xlsxToPdf(file, outName)
+      await xlsxToPdf(file, outName, onProgress, hq)
     } else if (ext === '.pptx') {
-      await pptxToPdf(file, outName)
+      await pptxToPdf(file, outName, onProgress, hq)
     } else {
       throw new Error('不支持的格式转换为 PDF')
     }
