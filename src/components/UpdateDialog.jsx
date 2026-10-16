@@ -112,6 +112,12 @@ export default function UpdateDialog({ updater }) {
               <p className="mt-2 text-xs text-ink-400">
                 {fmtMB(progress?.received)} MB / {fmtMB(progress?.total || info?.asset?.size)} MB（{pct(progress?.received, progress?.total || info?.asset?.size)}%）
               </p>
+              {progress?.source && (
+                <p className="mt-1.5 text-[11px] text-ink-400">
+                  当前源：{progress.source}
+                  {progress?.note && <span className="text-accent-600">（{progress.note}）</span>}
+                </p>
+              )}
             </div>
           )}
 

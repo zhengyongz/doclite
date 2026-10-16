@@ -40,11 +40,11 @@ export function useUpdater() {
         applyCheck(s)
       } else if (s.type === 'downloading') {
         setPhase('downloading')
-        setProgress({ received: s.received, total: s.total })
+        setProgress({ received: s.received, total: s.total, source: s.source, note: s.note })
       } else if (s.type === 'downloaded') {
         setPhase('ready')
         setFilePath(s.filePath)
-        setProgress({ received: s.received, total: s.total })
+        setProgress({ received: s.received, total: s.total, source: s.source })
       } else if (s.type === 'error') {
         setPhase('error')
         setErrorMsg(s.message)

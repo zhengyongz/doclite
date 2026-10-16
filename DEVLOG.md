@@ -250,4 +250,33 @@ npm run build && npx electron-builder --win nsis
 - 体验：转 PDF 双档质量（标准默认 / 高清勾选），进度百分比实时显示
 - 用户实测验收：0.38M/431 页 Word → 72.6M/2分42秒（标准）、128M/2分51秒（高清）
 
+## v0.4.3 下载镜像加速 + 自动切换（2026-10-16）
+
+用户实测 v0.4.2 自动升级成功，但反馈"下载慢"。根因：GitHub 资产服务器（objects.githubusercontent.com）国内直连极慢（本机实测约 110KB/s，87MB 约需 13 分钟）。
+
+### 镜像源轮询（electron/updater.cjs）
+
+- 新增 `DOWNLOAD_SOURCES` 候选源：**官方直连 → ghfast.top → gh-proxy.com → ghproxy.net**（ghproxy 类服务格式 = 前缀 + 官方完整 URL，已逐源实测连通性与速度）
+- `download()` 重构为多源轮询：每个源独立哈希累计，失败/过慢则清理残留并切换下一源；全部失败汇总各源原因（不再只报单一"下载失败"）
+- 新增**启动期慢速检测**：收到首个数据块后 10s 内累计 < 2MB（约 200KB/s）判定当前源过慢，主动断开切换镜像——直连"连得上但龟速"的场景自动走镜像
+- **sha256 期望值获取同样走镜像轮询**（小文件任一源成功即用），下载完成后全源统一校验，防止镜像被篡改
+
+### 修复下载挂死 bug（严重）
+
+- **现象**：带 sha256Url 时下载在"获取 sha256"阶段无限挂起（无任何失败日志，进程不退出）
+- **根因**：官方 GitHub 资产对 sha256 小文件请求偶发 30 秒无响应；原实现依赖 `req.destroy()` 触发的 error 事件结算 promise，实测 Electron 下 **destroy() 后 error 事件不触发**，promise 永不 settle
+- **修复**：`requestUrl` / `downloadFromUrl` 的超时定时器回调内**直接 reject**（destroy 仅作连接清理），不再依赖 error 事件；慢速检测同理
+- 同时修复了编辑过程中误引入的 requestUrl 函数头重复（语法错误）
+
+### 界面提示
+
+- 下载进度条下方新增"当前源"显示（官方直连 / 镜像 xxx），切换时提示"已自动切换（上一源：xxx）"（useUpdater.js + UpdateDialog.jsx）
+
+### 验证
+
+- 单元测试 12 项通过（候选源顺序/前缀拼接/compareVersions 回归）
+- Electron 主进程真实下载冒烟：87MB deb 全程 **77.3s**（原直连预估 13 分钟），sha256 与官方一致 PASS
+- 镜像完整性核对：ghfast.top 下载产物 sha256 与官方发布逐位一致（无篡改）
+- build + electron-builder 打包无错误（deb 87M）
+
 > AI生成
