@@ -1,19 +1,21 @@
 {
   "name": "doclite",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "轻快文档工具箱 - Word/Excel/PPT/PDF 本地预览与格式转换",
   "author": "doclite",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build -c vite.config.converters.js",
+    "build": "npm run build:app && npm run build:converters",
     "preview": "vite preview",
     "postinstall": "patch-package",
     "electron:dev": "npm run build && electron electron/main.cjs --no-sandbox",
     "electron:build": "npm run build && electron-builder --linux deb && node build/pack-converters.cjs",
-    "electron:build:win": "npm run build && electron-builder --win nsis && node build/pack-converters.cjs"
+    "electron:build:win": "npm run build && electron-builder --win nsis && node build/pack-converters.cjs",
+    "build:app": "vite build",
+    "build:converters": "vite build -c vite.config.converters.js"
   },
   "dependencies": {
     "@mdgate/mobi": "^0.6.25",

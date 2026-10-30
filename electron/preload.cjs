@@ -40,16 +40,8 @@ contextBridge.exposeInMainWorld('doclite', {
   // ---------- 可选转换组件 ----------
   // 组件状态：{ installed, version, source: 'dev'|'system'|'user'|null, scriptUrl }
   getConvertersStatus: () => ipcRenderer.invoke('converters:get-status'),
-  // 应用内安装组件（下载 zip→渲染层解压→写入用户级目录），返回 { ok, version?, error? }
+  // 应用内安装组件（主进程全程：下载 zip→解包校验→写入用户级目录），返回 { ok, version?, status?, error? }
   installConverters: () => ipcRenderer.invoke('converters:install'),
   // 卸载用户级组件（系统级由包管理器移除）
   uninstallConverters: () => ipcRenderer.invoke('converters:uninstall'),
-  // 主进程推送 { 安装 zip 的 ArrayBuffer, 版本信息 }，渲染层用 fflate 解压后经 unzipResult 回传
-  onUnzipRequest: (cb) => {
-    const listener = (_e, buffer, zipInfo) => cb(buffer, zipInfo)
-    ipcRenderer.on('converters:unzip-request', listener)
-    return () => ipcRenderer.removeListener('converters:unzip-request', listener)
-  },
-  // 回传解压结果（{ 相对路径: Uint8Array }）
-  unzipResult: (files, zipInfo) => ipcRenderer.invoke('converters:unzip-result', files, zipInfo),
 })

@@ -57,7 +57,7 @@ function SpinnerIcon({ className }) {
 export default function ConvertPanel() {
   const { currentFile, setError, isConverting, setConverting, setConvertProgress, convertProgress } = useFileStore()
   const [highQuality, setHighQuality] = useState(false)
-  const { status, api, busy, error: compError, install, convert } = useConverters()
+  const { status, api, busy, error: compError, notice, outdated, appVersion, install, uninstall, convert } = useConverters()
 
   if (!currentFile) return null
 
@@ -159,12 +159,27 @@ export default function ConvertPanel() {
       )}
 
       {status?.installed && (
-        <p className="mb-2 text-[10px] text-ink-300">
-          转换功能由可选组件提供
-          <button className="ml-1 underline hover:text-ink-500" disabled={busy} onClick={install}>
-            {busy ? '更新中…' : '更新组件'}
-          </button>
+        <div className="mb-2 flex items-center justify-between text-[10px] text-ink-300">
+          <span>转换功能由可选组件提供</span>
+          <span className="flex items-center gap-2 shrink-0">
+            <button className="underline hover:text-ink-500" disabled={busy} onClick={install}>
+              {busy ? '处理中…' : outdated ? `更新到 v${appVersion}` : '重装组件'}
+            </button>
+            {status.source === 'user' && (
+              <button className="underline hover:text-red-400" disabled={busy} onClick={uninstall}>
+                移除
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {outdated && (
+        <p className="mb-2 text-[11px] text-amber-600">
+          组件版本落后于应用，建议点击上方「更新到 v{appVersion}」。
         </p>
+      )}
+      {notice && (
+        <p className="mb-2 text-[11px] text-green-600 break-all">{notice}</p>
       )}
       {conversions.some((c) => c.key === 'to-pdf') && !isConverting && status?.installed && (
         <label

@@ -19,17 +19,27 @@ const SRC = path.join(ROOT, 'dist', 'converters')
 const OUT = path.join(ROOT, 'release')
 
 // ---------- 组件内容 ----------
-const manifest = { name: 'doclite-converters', version: VERSION, minAppVersion: VERSION, files: ['converters.js'] }
 const scriptFile = path.join(SRC, 'converters.js')
 if (!fs.existsSync(scriptFile)) {
   console.error('[pack-converters] 缺少 dist/converters/converters.js，请先运行 npm run build')
   process.exit(1)
 }
+const scriptBuf = fs.readFileSync(scriptFile)
+const scriptSha = crypto.createHash('sha256').update(scriptBuf).digest('hex')
+const manifest = {
+  name: 'doclite-converters',
+  version: VERSION,
+  minAppVersion: VERSION, // 主进程安装时校验：高于当前应用版本则拒绝（防 API 错配）
+  sha256: scriptSha, // 主进程解包后校验 converters.js 一致性（防通道内替换）
+  files: ['converters.js', 'manifest.json'],
+}
 
 // ---------- 1/2) zip + sha256 ----------
+// 固定 mtime：使同源码重复构建产出一致（zip 字节级可复现，便于校验）
+const FIXED_MTIME = new Date('1980-01-01T00:00:00Z') // zip DOS 时间下限（fflate 要求 1980-2099）
 const files = {
-  'converters.js': fs.readFileSync(scriptFile),
-  'manifest.json': Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8'),
+  'converters.js': [new Uint8Array(scriptBuf), { mtime: FIXED_MTIME }],
+  'manifest.json': [new Uint8Array(Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8')), { mtime: FIXED_MTIME }],
 }
 const zipBuf = Buffer.from(zipSync(files, { level: 9 }))
 const zipName = `DocLite-converters-${VERSION}.zip`
@@ -82,6 +92,7 @@ if (process.platform === 'linux') {
     const controlPath = path.join(rw, 'DEBIAN', 'control')
     let control = fs.readFileSync(controlPath, 'utf8')
     const want = `doclite-converters (>= ${VERSION})`
+    let changed = false
     if (control.includes(want)) {
       console.log('[pack-converters] 主包 Recommends 已包含转换组件，跳过')
     } else if (/^Recommends:(.*)$/m.test(control)) {
@@ -91,17 +102,23 @@ if (process.platform === 'linux') {
         return `Recommends: ${list ? list + ', ' : ''}${want}`
       })
       fs.writeFileSync(controlPath, control)
+      changed = true
       console.log(`[pack-converters] 主包 Recommends 已追加 ${want}`)
     } else {
       control = control.replace(/^(Architecture:.*$)/m, `$1\nRecommends: ${want}`)
       fs.writeFileSync(controlPath, control)
+      changed = true
       console.log(`[pack-converters] 主包已添加 Recommends: ${want}`)
     }
-    // 原子替换：先写临时文件再 rename，避免中断留下半截 deb（不可恢复损坏）
-    // -Zxz -z9：与 electron-builder 原生 deb 同等压缩率（差值 <1%），代价约 4 分钟构建时间
-    const mainDebNew = mainDeb + '.new'
-    execFileSync('dpkg-deb', ['-b', '-Zxz', '-z9', rw, mainDebNew], { stdio: 'pipe' })
-    fs.renameSync(mainDebNew, mainDeb)
+    if (changed) {
+      // 原子替换：先写临时文件再 rename，避免中断留下半截 deb（不可恢复损坏）
+      // -Zxz -z9：与 electron-builder 原生 deb 同等压缩率（差值 <1%），代价约 4 分钟构建时间
+      const mainDebNew = mainDeb + '.new'
+      execFileSync('dpkg-deb', ['-b', '-Zxz', '-z9', rw, mainDebNew], { stdio: 'pipe' })
+      fs.renameSync(mainDebNew, mainDeb)
+    } else {
+      console.log('[pack-converters] control 无变更，跳过重压缩（约省 4 分钟）')
+    }
     fs.rmSync(rw, { recursive: true, force: true })
     const mainSha = crypto.createHash('sha256').update(fs.readFileSync(mainDeb)).digest('hex')
     fs.writeFileSync(path.join(OUT, `doclite_${VERSION}_amd64.deb.sha256`), `${mainSha}  doclite_${VERSION}_amd64.deb\n`)

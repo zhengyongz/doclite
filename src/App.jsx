@@ -11,15 +11,6 @@ import UpdateDialog from './components/UpdateDialog'
 import { useUpdater } from './useUpdater'
 import { useEffect, useRef } from 'react'
 import { getExtension } from './utils/fileHelpers'
-import { registerUnzipHandler } from './utils/convertersLoader'
-
-// ---------- 转换组件应用内安装：注册"主进程→渲染层解压"管线（应用级一次） ----------
-function useConvertersUnzipPipeline() {
-  useEffect(() => {
-    const off = registerUnzipHandler()
-    return () => { if (off) off() }
-  }, [])
-}
 
 // ---------- 文件关联：加载主进程待打开的文件 ----------
 function useOpenFileFromArgs() {
@@ -68,7 +59,6 @@ function AppBody() {
   const { currentFile } = useFileStore()
   const updater = useUpdater()
   useOpenFileFromArgs()
-  useConvertersUnzipPipeline()
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-ink-50">

@@ -320,3 +320,49 @@ electron-builder NSIS oneClick 模式无组件选择页（自定义组件页与�
 - 历史遗留：本地 release/ 的 0.4.1 deb 副本与 sha256 文件不符（GitHub 资产为准）
 
 > AI生成
+
+## v0.5.1 转换组件安全加固（workbuddy 审查修复，2026-10-30）
+
+审查报告：H1（高）+ M1~M4（中）+ L1~L7（低）。本轮修复 H1/M1/M2/M3/M4 及 L2/L3/L4/L6/L7；L1/L5 随白名单与既有设计自然收敛。
+
+### H1 持久化 XSS 通道（信任边界收口）⚠️ 核心变更
+
+- **问题**：原实现由渲染层解压 zip 并回传文件内容，主进程仅做路径/体积校验 → 渲染层被攻破时可写入任意 `converters.js`，且下次启动自动注入执行（持久化）
+- **审查建议的 manifest 内嵌哈希方案存在自身弱点**（攻击者可同时伪造 manifest 与脚本），故采取更彻底方案：
+  - **主进程内置最小 zip 解包器**（Node `zlib.inflateRawSync` + 自研 CRC32 + 中央目录解析，约 120 行，零依赖）
+  - 删除 `converters:unzip-request/unzip-result` IPC 与渲染层 fflate 解压管线——**主进程不再信任渲染层回传任何内容**
+  - 解包白名单：仅 `converters.js` / `manifest.json` / `assets/**`；`inflateRawSync` 加 `maxOutputLength`（防 zip 炸弹）；CRC32 全文件校验
+  - manifest 校验：version 格式回验（ZIP_NAME_RE）、`minAppVersion` 兼容性、`sha256` 与实算比对（纵深防御）
+  - 渲染层 fflate 引用移除；preload 暴露面收缩（删除 2 个 API）
+
+### M1 安装并发互斥
+
+- 模块级 `installing` 标志（并发请求直接拒绝）；下载临时文件随机后缀（`converters-download-<ts>-<rand>.zip`），消除双流写同文件与 session 覆盖悬挂
+
+### M2 组件与主程序版本错配
+
+- `locateComponentAsset` 只选择**不高于当前主程序版本**的组件 zip；manifest `minAppVersion` 高于当前应用则拒绝安装
+
+### M3 校验缺失与 zip 炸弹
+
+- `.sha256` 资产缺失/获取失败时**中止安装**（不再降级跳过）；下载体积硬上限 100MB；解压单文件 20MB / 总量 60MB / 条目 50 上限 + inflate 输出上限
+
+### M4 错误透传
+
+- 解压/校验失败的真实原因直接从主进程返回（"组件包内容为空"等误导性错误消失）
+
+### 低优先级
+
+- L2：CSP 移除多余的 `img-src file:`（仅保留 `script-src file:`）
+- L3：卸载连带清理 `.installing` 残留与 `converters-download-*.zip`
+- L4：ConvertPanel 按版本比对显示"更新到 vX"、安装/卸载成功反馈（notice）、用户级"移除"入口
+- L6：构建脚本拆分 `build:app` / `build:converters`（开发可单独跳过组件构建）
+- L7：主 deb control 无变更时跳过 xz9 重压缩（省约 4 分钟）；zip 构建固定 mtime（1980-01-01）实现字节级可复现
+
+### 验证
+
+- 单测 22/22：正常/ store 解包、白名单（evil.exe、../、绝对路径、盘符）、CRC 篡改、截断包、sha256 不符、非法 version、minAppVersion 过高、缺 manifest、21MB 预检、CRC32 标准向量
+- e2e（真实网络）：应用内安装 → 主进程解包写盘 → 状态检测 → 组件加载 → docx→pdf CONVERT_OK → 卸载清理，PASS
+- 修复一个 UI 误导 bug：安装结果返回"本次安装版本"而非全局最高版本
+
+> AI生成
