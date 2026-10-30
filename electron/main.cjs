@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { registerUpdater } = require('./updater.cjs')
+const { registerConvertersComponent } = require('./converters-component.cjs')
 
 // GPU 兼容性开关（--no-sandbox 由 CLI 传入：electron:dev 脚本与 .desktop executableArgs，
 // 用于 Ubuntu 24.04 AppArmor 拦截 user namespace 的环境；正式 deb 由 postinst 处理 chrome-sandbox SUID）
@@ -125,6 +126,9 @@ app.whenReady().then(() => {
 
   // 自动升级模块：注册 IPC（检查/下载/剪贴板/打开安装包）+ 启动 3 秒后静默检查
   registerUpdater()
+
+  // 可选转换组件：注册 IPC（状态检测/应用内安装/卸载/解压回传）
+  registerConvertersComponent()
 
   // 冒烟测试模式（DOCLITE_SMOKE=1，仅源码环境）：转发渲染层日志，6 秒时截图后自动退出，用于无头回归验证
   if (process.env.DOCLITE_SMOKE === '1' && !app.isPackaged) {

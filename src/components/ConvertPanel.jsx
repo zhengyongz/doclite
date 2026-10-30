@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useFileStore } from '../context/FileContext'
 import { getExtension } from '../utils/fileHelpers'
-import { convertFile } from '../utils/converters'
+import { useConverters } from '../useConverters'
+// 注意：不再直接 import converters.js —— 转换库已拆为独立可选组件（安装时不存在于主包），
+// 运行时经 useConverters().convert() 从 window.DocLiteConverters 懒加载。
 
 // Inline icons
 function PdfIcon({ className }) {
@@ -55,6 +57,7 @@ function SpinnerIcon({ className }) {
 export default function ConvertPanel() {
   const { currentFile, setError, isConverting, setConverting, setConvertProgress, convertProgress } = useFileStore()
   const [highQuality, setHighQuality] = useState(false)
+  const { status, api, busy, error: compError, install, convert } = useConverters()
 
   if (!currentFile) return null
 
@@ -108,7 +111,7 @@ export default function ConvertPanel() {
     setConvertProgress(null)
 
     try {
-      await convertFile(currentFile.file, ext, key, (current, total) => {
+      await convert(currentFile.file, ext, key, (current, total) => {
         const percent = Math.round((current / total) * 100)
         setConvertProgress(`${percent}%`)
       }, { highQuality })
@@ -125,7 +128,9 @@ export default function ConvertPanel() {
     <div className="rounded-lg border border-ink-200 bg-white px-3 py-3 shadow-soft">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">
-          格式转换
+          格式转换{status?.installed ? (
+            <span className="ml-1.5 text-[10px] text-ink-300 normal-case">（组件 v{status.version}）</span>
+          ) : null}
         </p>
         {isConverting && convertProgress && (
           <span className="text-xs text-accent-500 font-medium tabular-nums">
@@ -133,7 +138,35 @@ export default function ConvertPanel() {
           </span>
         )}
       </div>
-      {conversions.some((c) => c.key === 'to-pdf') && !isConverting && (
+
+      {/* —— 转换组件未安装：安装引导（可选功能，不装不影响浏览） —— */}
+      {!status?.installed && (
+        <div className="rounded-lg border border-dashed border-ink-200 bg-ink-50/50 px-3 py-3">
+          <p className="text-xs text-ink-500 leading-relaxed">
+            文档格式转换为可选功能，当前未安装。安装后可在这里将文档导出为 PDF、Word、图片、电子书等格式。
+          </p>
+          <button
+            disabled={busy}
+            onClick={install}
+            className="mt-2.5 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-accent-300 bg-accent-50 text-accent-700 text-xs font-medium hover:bg-accent-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? '正在安装，请稍候…' : '安装转换组件（约 1MB，仅需一次）'}
+          </button>
+          {compError && (
+            <p className="mt-2 text-[11px] text-red-500 break-all">{compError}</p>
+          )}
+        </div>
+      )}
+
+      {status?.installed && (
+        <p className="mb-2 text-[10px] text-ink-300">
+          转换功能由可选组件提供
+          <button className="ml-1 underline hover:text-ink-500" disabled={busy} onClick={install}>
+            {busy ? '更新中…' : '更新组件'}
+          </button>
+        </p>
+      )}
+      {conversions.some((c) => c.key === 'to-pdf') && !isConverting && status?.installed && (
         <label
           className="flex items-center gap-1.5 mb-2 cursor-pointer select-none"
           title="标准：屏幕阅读清晰，体积小速度快；高清：约 200 DPI 打印级，体积约为标准的 2.5 倍"
@@ -148,13 +181,14 @@ export default function ConvertPanel() {
         </label>
       )}
       <div className="flex flex-col gap-2">
-        {conversions.map(({ key, label, description, icon: Icon, color }) => {
+        {status?.installed && conversions.map(({ key, label, description, icon: Icon, color }) => {
           const isThisConverting = isConverting
           return (
             <button
               key={key}
               onClick={() => handleConvert(key)}
-              disabled={isConverting}
+              disabled={isConverting || !api}
+              title={!api ? '转换组件加载中…' : undefined}
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-ink-200 bg-white hover:border-accent-300 hover:bg-accent-50/40 transition-colors focus-ring group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isThisConverting ? (
@@ -174,6 +208,9 @@ export default function ConvertPanel() {
         <p className="mt-2 text-xs text-ink-400">
           正在转换中，请稍候…
         </p>
+      )}
+      {status?.installed && compError && (
+        <p className="mt-2 text-[11px] text-red-500 break-all">{compError}</p>
       )}
     </div>
   )

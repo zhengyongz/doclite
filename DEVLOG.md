@@ -279,4 +279,44 @@ npm run build && npx electron-builder --win nsis
 - 镜像完整性核对：ghfast.top 下载产物 sha256 与官方发布逐位一致（无篡改）
 - build + electron-builder 打包无错误（deb 87M）
 
+## v0.5.0 安装时可选文件转换功能（2026-10-30）
+
+用户需求："程序安装时选择是否安装文件转换功能——默认浏览功能，可选转换功能。"
+
+### 结构性拆分（浏览 / 转换分离）
+
+- **主包**：仅浏览功能（PDF/Word/Excel/PPT/MOBI/AZW3/MD 预览）。ConvertPanel 不再 import converters.js，转换库从主 bundle 彻底剥离（jspdf 390K / html2canvas 202K / xlsx / docx / mobiWriter 等全部移出）
+- **转换组件**：新增 `vite.config.converters.js` 独立构建（lib 模式 IIFE 单文件 `converters.js` 2.2MB，gzip 后 680K），入口 `src/converters-entry.js` 运行时挂 `window.DocLiteConverters`
+- **主进程零 npm 依赖**：生产环境排除全部 node_modules（Vite bundle 后运行时依赖为零），app.asar 从 111M → 3.9M；主包 deb 87M → **69.2M**（-18M）
+
+### 组件安装途径（三种，版本高者优先）
+
+1. **dev**：`dist/converters`（源码运行自动可用）
+2. **系统级（Linux）**：独立组件包 `doclite-converters_<版本>_amd64.deb` 安装到 `/opt/DocLite/resources/converters`；主 deb 添加 `Recommends: doclite-converters (>= 版本)`——`apt install ./doclite_x.deb` 自动带上（默认完整功能），`dpkg -i`（一键升级流程）= 纯浏览
+3. **用户级（双平台统一）**：应用内一键安装——主进程镜像轮询下载组件 zip（复用升级器基建 + sha256 防篡改）→ 渲染层 fflate 解压 → 写入 `~/.config/doclite/converters`（免提权，支持更新/卸载）
+
+### 应用内安装管线（electron/converters-component.cjs + convertersLoader.js）
+
+- ConvertPanel 检测组件状态：未安装→"安装转换组件（约 1MB，仅需一次）"引导；已安装→正常转换 + "更新组件"入口（组件版本显示）
+- 主进程零依赖原则：zip 解压由渲染层 fflate 完成（主 bundle 新增唯一小依赖，8KB），IPC 回传 + 主进程防路径穿越/体积上限校验 + 临时目录原子替换
+- CSP 调整：`script-src 'self' file:`（允许动态加载本地磁盘组件脚本）
+- updater.check() 补充 releaseAssets 资产清单，供组件定位 `DocLite-converters-<版本>.zip` 及配套 sha256
+
+### 打包链（build/pack-converters.cjs）
+
+- `npm run build` = 主构建 + 组件构建；`electron:build` 追加组件打包
+- 产物：主 deb（Recommends 后处理）+ `DocLite-converters-0.5.0.zip(+.sha256)` + `doclite-converters_0.5.0_amd64.deb(+.sha256)`
+- 主 deb 后处理原子替换（临时文件 + rename 防中断损坏）；xz9 压缩与 electron-builder 原生水平一致（69.2M，构建多约 4 分钟）
+
+### Windows 路线说明
+
+electron-builder NSIS oneClick 模式无组件选择页（自定义组件页与模板冲突、风险高），Windows 保留一键安装（浏览版）+ 应用内 zip 安装组件，与 Linux 用户级路线统一。
+
+### 验证
+
+- 主 bundle 静态验证：转换库 chunk 全部消失、零 node_modules 引用、asar 无 node_modules（5840 个文件 → 0）
+- e2e 冒烟（Electron 真实进程）：A 模式 状态检测→script 注入→convertFile 真实 docx→pdf 返回 CONVERT_OK；B 模式（移除组件目录）installed=false PASS
+- sha256sum -c 三产物校验通过（deb 69,231,916B / 组件 deb 560,558B / zip 696,350B）
+- 历史遗留：本地 release/ 的 0.4.1 deb 副本与 sha256 文件不符（GitHub 资产为准）
+
 > AI生成

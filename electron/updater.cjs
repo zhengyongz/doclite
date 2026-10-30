@@ -163,6 +163,12 @@ async function check({ force = false } = {}) {
     result.releaseName = data.name || data.tag_name
     result.releaseNotes = data.body || ''
     result.platform = process.platform
+    // 全部资产清单（转换组件安装器用：定位 DocLite-converters-<版本>.zip 及其 .sha256）
+    result.releaseAssets = (data.assets || []).map((a) => ({
+      name: a.name,
+      size: a.size,
+      url: a.browser_download_url,
+    }))
     result.asset = mainAsset
       ? {
           name: mainAsset.name,
@@ -445,4 +451,4 @@ function registerUpdater() {
   }, 3000)
 }
 
-module.exports = { registerUpdater, compareVersions, check, download, pickAsset, buildCandidateSources, DOWNLOAD_SOURCES }
+module.exports = { registerUpdater, compareVersions, check, download, pickAsset, buildCandidateSources, DOWNLOAD_SOURCES, downloadFromUrl, requestUrl }
