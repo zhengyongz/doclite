@@ -126,9 +126,11 @@
       "artifactName": "${productName}-${version}-Setup.${ext}"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "multiLanguageInstaller": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "轻快文档工具箱",
