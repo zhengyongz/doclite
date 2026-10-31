@@ -12,40 +12,48 @@
     "preview": "vite preview",
     "postinstall": "patch-package",
     "electron:dev": "npm run build && electron electron/main.cjs --no-sandbox",
-    "electron:build": "npm run build && electron-builder --linux deb && node build/pack-converters.cjs",
-    "electron:build:win": "npm run build && electron-builder --win nsis && node build/pack-converters.cjs",
+    "electron:build": "npm run build && electron-builder --linux deb --publish never && node build/pack-converters.cjs",
+    "electron:build:win": "npm run build && electron-builder --win nsis --publish never && node build/pack-converters.cjs",
     "build:app": "vite build",
     "build:converters": "vite build -c vite.config.converters.js"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
+  "devDependencies": {
     "@mdgate/mobi": "^0.6.25",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
     "docx": "^9.7.1",
     "docx-preview": "^0.4.0",
     "dompurify": "^3.4.16",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
     "fflate": "^0.8.3",
     "foliate-js": "^1.0.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "marked": "^18.1.0",
+    "patch-package": "^8.0.1",
     "pdfjs-dist": "^4.10.38",
+    "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
-    "patch-package": "^8.0.1",
-    "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "xlsx": "^0.18.5"
   },
   "build": {
     "appId": "com.doclite.app",
     "productName": "DocLite",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zhengyongz",
+        "repo": "doclite"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -111,7 +119,6 @@
     "files": [
       "dist/**/*",
       "!dist/converters/**",
-      "!node_modules/**/*",
       "electron/**/*",
       "build/**/*"
     ],

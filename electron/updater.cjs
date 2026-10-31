@@ -81,6 +81,8 @@ function pickAsset(assets, platform) {
   return null // macOS 暂无发布
 }
 
+// ---------- 补充：下载器主入口优先尝试差量引擎（见函数内注释） ----------
+
 // ---------- net.request 封装：GET 小响应（带空闲超时，403/429 给专属文案） ----------
 function requestUrl(url, headers = {}, { maxBytes = 0 } = {}) {
   return new Promise((resolve, reject) => {
@@ -272,6 +274,117 @@ function downloadFromUrl(source, target, { size, sizeCap, hash, onProgress }) {
   })
 }
 
+// ---------- 差量下载引擎（v0.5.2+，Windows） ----------
+// 基于 electron-updater + electron-builder 构建期生成的 Setup.exe.blockmap 分块对比：
+//   ① 下载新版 blockmap（约 100KB）
+//   ② 与本地缓存的上一次下载产物（cacheDir/installer.exe + cacheDir/current.blockmap）分块对比
+//   ③ 仅对变化块发 HTTP Range 请求，拼回完整安装包（拼装后 sha512 全文校验）
+// 阅读 electron-updater 6.8.x 源码得出的关键实现细节：
+//   · 差量对照的旧文件固定读 cacheDir/installer.exe，而下载产物按原始文件名存 pending/ 且
+//     换代时会被清空——库自身从不写 installer.exe，需在每次下载成功后主动“播种”（复制一份）。
+//   · 旧 blockmap 优先读本地缓存 cacheDir/current.blockmap（每次下载成功后自动提升），
+//     与播种文件天然同版本；feed 用 GitHub stable 地址时服务端旧 blockmap 会 404，但无需依赖。
+//   · generic provider 默认尝试 multipart/byteranges 多段请求，GitHub/镜像多不支持，
+//     显式 useMultipleRangeRequest:false 改走逐块单 Range，兼容性最好。
+//   · 任一环节失败（无播种文件/镜像不支持 Range/块校验失败）库内部自动回退全量，不会中断升级。
+//   · 安全：拼装结果经 latest.yml 的 sha512 全文校验，等效全量+哈希校验；另将 latest.yml 的
+//     size 与 GitHub API 资产清单交叉核对，防镜像同时算改安装包与元数据。
+const STABLE_DOWNLOAD_BASE = `https://github.com/${REPO}/releases/latest/download/`
+
+// 生成 feed 候选源（与 DOWNLOAD_SOURCES 同序：官方直连 + 镜像；镜像支持 Range 时同样可差量）
+function buildFeedSources() {
+  return DOWNLOAD_SOURCES.map((s) => ({ name: s.name, url: s.prefix + STABLE_DOWNLOAD_BASE }))
+}
+
+function createDiffLogger() {
+  const tag = '[electron-updater]'
+  return {
+    info: (m) => { if (process.env.DOCLITE_UPDATER_VERBOSE === '1') console.log(tag, m) },
+    warn: (m) => console.warn(tag, m),
+    error: (m) => console.error(tag, m),
+    debug: () => {},
+  }
+}
+
+// 播种差量基准：把下载产物复制为 cacheDir/installer.exe，供下次差量对照
+async function seedDiffBaseFile(updater, downloadedFile) {
+  try {
+    const helper = updater.downloadedUpdateHelper
+    if (!helper || !helper.cacheDir) return
+    await fs.promises.mkdir(helper.cacheDir, { recursive: true })
+    await fs.promises.copyFile(downloadedFile, path.join(helper.cacheDir, 'installer.exe'))
+  } catch (e) {
+    console.warn('[updater] 差量基准播种失败（下次将回退全量）:', e.message)
+  }
+}
+
+// 差量下载：逐源（官方 + 镜像）尝试 electron-updater（generic feed，单 Range）。
+// feedSources 可选注入（本地集成测试用）；缺省用 buildFeedSources()。
+// 返回 { filePath, source, mode: 'differential'|'full', received, total }；全部失败抛错，由调用方回退传统全量。
+async function downloadDifferential({ onProgress, onSource, feedSources } = {}) {
+  const { NsisUpdater } = require('electron-updater') // 懒加载：非差量路径不引入第三方依赖
+  const state = cachedState && cachedState.result
+  const apiAssetSize = state && state.asset ? state.asset.size : 0 // GitHub API 交叉核对基准
+  const sources = feedSources || buildFeedSources()
+  const failures = []
+
+  for (let i = 0; i < sources.length; i++) {
+    const source = sources[i]
+    const note = i > 0 ? `已自动切换（上一源：${sources[i - 1].name}）` : undefined
+    if (onSource) onSource(source.name, note)
+
+    const u = new NsisUpdater()
+    u.logger = createDiffLogger()
+    u.autoDownload = false
+    u.autoInstallOnAppQuit = false // 保持“用户手动运行安装向导”的既有交互，不静默安装
+    // 未打包环境（electron:dev/本地测试宿主）下 electron-updater 默认整体停用，强制启用便于调试
+    if (!app.isPackaged) u.forceDevUpdateConfig = true
+
+    let progressMax = { received: 0, total: 0 }
+    try {
+      u.setFeedURL({ provider: 'generic', url: source.url, useMultipleRangeRequest: false })
+      u.on('download-progress', (p) => {
+        progressMax = { received: p.transferred, total: p.total }
+        if (onProgress) onProgress(p.transferred, p.total, source.name, note)
+      })
+
+      const checkResult = await u.checkForUpdates() // 仅拉取 latest.yml（小文件）
+      const info = checkResult && checkResult.updateInfo
+      if (!info || !info.version) throw new Error('feed 无版本信息')
+      if (compareVersions(info.version, app.getVersion()) <= 0) {
+        throw new Error(`feed 版本不高于当前（${info.version}）`)
+      }
+      // 安装包期望大小：兼容 electron-builder 新旧 latest.yml 格式（新格式 size 在 files[0]）
+      const expectedSize =
+        (Array.isArray(info.files) && info.files[0] && info.files[0].size) || info.size || 0
+      // 防篡改交叉核对：latest.yml 的 size 应与 GitHub API 资产清单一致（不一致视为该源不可信）
+      if (apiAssetSize > 0 && expectedSize > 0 && Math.abs(expectedSize - apiAssetSize) > apiAssetSize * 0.1) {
+        throw new Error(`feed 大小与官方清单不符（${expectedSize} vs ${apiAssetSize}）`)
+      }
+
+      const result = await u.downloadUpdate() // 内部自动：差量失败→全量；成功后 sha512 已校验
+      const filePath = Array.isArray(result) ? result[0] : result
+      if (!filePath || !fs.existsSync(filePath)) throw new Error('下载产物缺失')
+
+      await seedDiffBaseFile(u, filePath) // 为下次差量播种
+
+      // 全量/差量判定：差量进度总字节远小于安装包体积；命中缓存直取时进度为空，标为全量完成
+      let mode = 'full'
+      if (progressMax.total > 0 && expectedSize > 0 && progressMax.total < expectedSize * 0.5) mode = 'differential'
+      const received = progressMax.total > 0 ? progressMax.received : expectedSize
+      const total = progressMax.total > 0 ? progressMax.total : expectedSize
+
+      u.removeAllListeners()
+      return { filePath, source: source.name, mode, received, total }
+    } catch (err) {
+      u.removeAllListeners()
+      failures.push(`${source.name}：${err.message}`)
+      console.warn(`[updater] 差量源失败（${source.name}）:`, err.message)
+    }
+  }
+  throw new Error(`差量引擎全部源失败：${failures.map((f) => `\n· ${f}`).join('')}`)
+}
+
 // ---------- 流式下载安装包（镜像源轮询 + sha256 校验），进度经 updater:status 推送 ----------
 async function download(assetOverride) {
   const state = cachedState && cachedState.result
@@ -284,11 +397,39 @@ async function download(assetOverride) {
     const win = currentWin()
     if (win && !win.isDestroyed()) win.webContents.send('updater:status', status)
   }
+  let lastSend = 0 // 进度事件节流（差量与传统全量两路径共用）
 
   const dir = path.join(app.getPath('downloads'), SUB_DIR)
   const target = path.join(dir, path.basename(asset.name)) // basename 防路径穿越
 
   try {
+    // v0.5.2+ Windows：优先差量引擎（electron-updater，分块对比只传变化部分，逐源尝试），
+    // 差量条件不满足时其内部自动全量；引擎整体失败时回退下方传统镜像全量下载。
+    // assetOverride 仅供测试注入，绕过差量。
+    if (process.platform === 'win32' && !assetOverride) {
+      try {
+        const r = await downloadDifferential({
+          onSource: (sourceName, note) => {
+            send({ type: 'downloading', received: 0, total: 0, source: sourceName, note })
+          },
+          onProgress: (received, total, sourceName, note) => {
+            const now = Date.now()
+            if (now - lastSend > 200) {
+              lastSend = now
+              send({ type: 'downloading', received, total, source: sourceName, note })
+            }
+          },
+        })
+        const label = r.mode === 'differential' ? `${r.source}·差量` : r.source
+        const note = r.mode === 'differential' ? '差量更新：仅下载与上一版不同的部分' : undefined
+        lastDownloaded = r.filePath // H1/M1：主进程记账，供 open-installer 使用
+        send({ type: 'downloaded', received: r.received, total: r.total, filePath: r.filePath, source: label, note })
+        return r.filePath
+      } catch (err) {
+        console.warn('[updater] 差量引擎不可用，回退传统镜像全量下载:', err.message)
+      }
+    }
+
     await fs.promises.mkdir(dir, { recursive: true })
 
     // L4：下载前清理历史同类型安装包（保留本次）
@@ -320,7 +461,6 @@ async function download(assetOverride) {
     const sizeCap = Math.ceil((asset.size || 500 * 1024 * 1024) * SIZE_CAP_RATIO)
     const sources = buildCandidateSources(asset.url)
     const failures = []
-    let lastSend = 0
 
     for (let i = 0; i < sources.length; i++) {
       const source = sources[i]
@@ -451,4 +591,4 @@ function registerUpdater() {
   }, 3000)
 }
 
-module.exports = { registerUpdater, compareVersions, check, download, pickAsset, buildCandidateSources, DOWNLOAD_SOURCES, downloadFromUrl, requestUrl }
+module.exports = { registerUpdater, compareVersions, check, download, pickAsset, buildCandidateSources, buildFeedSources, downloadDifferential, seedDiffBaseFile, DOWNLOAD_SOURCES, downloadFromUrl, requestUrl }

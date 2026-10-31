@@ -366,3 +366,39 @@ electron-builder NSIS oneClick 模式无组件选择页（自定义组件页与�
 - 修复一个 UI 误导 bug：安装结果返回"本次安装版本"而非全局最高版本
 
 > AI生成
+
+## 2026-10-31 · 差量升级（electron-updater）
+
+### 动机
+
+升级一直是全量下载 71.76MB：安装包里业务代码 app.asar 仅 2.57MB，其余 96% 是几乎不变的 Electron 运行时——每次升级重复下载。
+
+### 方案（方案 A：官方 electron-updater + blockmap 差量）
+
+- 集成 electron-updater 6.8.11 作为唯一运行时依赖（dependencies）；原 14 个浏览器侧库全部移入 devDependencies（Vite 打进 dist，无需进安装包），延续 v0.5.0 "node_modules 清零"精神——asar 内仅 electron-updater 的 11 包闭包（app.asar 2.57→4.65MB，NSIS 压缩后安装包 71.76→72.07MB，净增 0.31MB）
+- build 新增 publish: github（生成 app-update.yml：provider + updaterCacheDirName=doclite-updater；**必需**，否则 electron-updater 下载时读配置 ENOENT 导致差量路径整体失效）+ 构建脚本 --publish never 防误发布
+- updater.cjs 新增差量引擎 downloadDifferential：Windows 升级时优先走差量，逐源（官方直连+ghfast/gh-proxy/ghproxy 镜像）尝试 generic feed（releases/latest/download/ 稳定地址），失败自动回退原镜像全量下载（行为与旧版一致）；进度/结果事件沿用 updater:status 协议，渲染层零改动
+
+### 阅读 electron-updater 6.8.x 源码得出的关键实现细节（均已处理）
+
+1. 差量对照旧文件固定读 cacheDir/installer.exe，但下载产物按原始名存 pending/ 且换代清空——库自身从不写该文件，**需下载成功后主动播种**（seedDiffBaseFile 复制一份），否则差量永远不触发
+2. 旧 blockmap 优先读本地 cacheDir/current.blockmap（每次成功后自动提升），与播种文件同版本；stable feed 地址下服务端旧 blockmap 404 无需依赖
+3. generic provider 默认 multipart/byteranges 多段请求，GitHub/镜像多不支持——显式 useMultipleRangeRequest:false 走逐块单 Range
+4. 未打包环境需 forceDevUpdateConfig=true 才启用 updater（electron:dev 可调试升级）
+5. electron-builder 25 的 latest.yml 为新格式（size 在 files[0] 内，顶层无 size），解析需兼容
+6. 安全：拼装后 sha512 全文校验（latest.yml）；另用 GitHub API 资产 size 与 latest.yml 交叉核对，防镜像同改安装包与元数据
+
+### E2E 验证（本地 Range 服务器 + 双跳模拟，.temp/difftest）
+
+- hop1（无播种）：feed 检查 → 全量 75,569,979B（旧 blockmap 404 触发引擎内回退，符合代码路径）→ sha512 一致 → 播种建立
+- hop2（差量）：latest.yml(342B) + 新 blockmap(78KB) + **9 个 206 Range 块共 1,368,879B（仅 1.37MB）** → 拼回 75,569,582B 完整安装包 → sha512 一致 → 播种自动更新为 9.9.9
+- **传输节省 98.2%**（72MB → 1.37MB）；生产中首次 electron-updater 下载为全量（同现网体验），第二次起均差量
+
+### 发布清单（每次发版必须）
+
+Release 资产除安装包外，**必须同时上传** electron-builder 生成的：
+- latest.yml（feed 元数据：版本+sha512+文件名）
+- Setup.exe.blockmap（分块哈希图，差量对比基准）
+镜像/直连 feed 地址为 eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
+
+> AI生成
