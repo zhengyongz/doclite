@@ -399,6 +399,50 @@ electron-builder NSIS oneClick 模式无组件选择页（自定义组件页与�
 Release 资产除安装包外，**必须同时上传** electron-builder 生成的：
 - latest.yml（feed 元数据：版本+sha512+文件名）
 - Setup.exe.blockmap（分块哈希图，差量对比基准）
-镜像/直连 feed 地址为 eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
+镜像/直连 feed 地址为 
+eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
+
+> AI生成
+
+## v0.6.0 macOS 版本首发 + 三平台 CI 自动发版（2026-11-03）
+
+按《DocLite-macOS构建-智能体提示词正文.md》执行（本次按用户指示跳过第三方审查直接发布）。
+
+### macOS 构建（无 Xcode 依赖）
+
+- `package.json` 新增 `build.mac` 段：dmg+zip × x64/arm64 双架构、`build/icon.icns`、productivity 分类、`hardenedRuntime`、`gatekeeperAssess: false`（ad-hoc 签名下关掉 Gatekeeper 评估，否则安装被拦）
+- `build/entitlements.mac.plist`：4 key，其中 `files.user-selected.read-write` 为 macOS 文件关联打开所必需
+- 图标：CI 上由 sips/iconutil 从 512×512 png 生成 icon.icns（不入库，.gitignore 排除）
+- macOS 一期仅手动更新：无 Developer ID 签名时 electron-updater zip 替换必被 Gatekeeper 阻止——`download()` 加 darwin 守卫（打开 Release 页 + 指引文案），check() 在更新说明尾部追加手动下载指引； entitlements/hardenedRuntime 已备好，获取签名后可零改动开通
+
+### 平台适配修复
+
+- `main.cjs`：open-file 监听从 whenReady 内移至模块顶层（macOS 双击文件启动时事件早于 ready 触发，原写法丢失首个事件）；window-all-closed 加 darwin 判断（macOS 惯例关窗不退出）
+- `updater.cjs` pickAsset darwin 分支。⚠️ 踩坑实录：electron-builder zip 历史命名怪癖——arm64 为 `*-arm64-mac.zip`，x64 无 arch 后缀直接叫 `*-mac.zip`；首版正则按文档写的 `-arm64.zip/-x64.zip` 匹配不到实际产物，mac 检测到更新会误报"未找到可用安装包"。已按真实资产名修正并单测验证
+
+### GitHub Actions（首次建立 CI）
+
+- `release.yml`：推 v* tag 三平台矩阵构建（fail-fast:false）→ sips 生成 icns（mac）→ 各平台 `--publish never` 打包 → pack-converters（全平台出组件 zip）→ softprops/action-gh-release 上传 16 资产；tag 门控（workflow_dispatch 调试不上传）；npm 缓存只 cache ~/.npm（node_modules 必须每次 npm ci，保证 patch-package 生效）
+- `ci.yml`：master/PR 三平台构建验证，不发版
+- ⚠️ 踩坑：Windows runner 默认 shell 为 PowerShell，清理步骤 `rm -f` 失败导致 win 上传被跳过——改 Node 跨平台单行
+- 发现并清理：`release/*.yml` 通配误传 builder-debug.yml / latest-linux.yml（AppImage 专用）；macOS 语言包位于 `Electron Framework.framework/Resources/*.lproj` 而非 afterPack 处理的 locales 目录，mac 产物多约 54M（待下版给 afterPack 加 mac 分支）
+
+### v0.6.0 发布实录（tag 复位重发）
+
+首跑三平台成功后验证资产发现 pickAsset 正则与实际 mac zip 命名不匹配 → 修复 → tag 复位到修复提交重触发（mac/linux 产物覆盖为修复版）；Windows job 因上述 shell 问题上传被跳过，保留首跑产物（本次 diff 仅 darwin 死代码 + workflow 文件，不影响 Windows 功能，exe/blockmap/latest.yml 三件套同源自洽）；残留调试文件已 API 删除；已补发布说明。
+
+### 验证
+
+- Linux 本机：--mac --dir 双架构 .app 产出（Info.plist 版本/关联/分类正确）、Linux deb 全链回归（Recommends 后处理正常）、src/ 零改动、启动冒烟正常
+- CI：三平台构建成功；16 资产完整上传（mac dmg×2/zip×2+blockmap、win exe+blockmap+latest.yml、linux deb×2+组件×3、latest-mac.yml）
+- pickAsset 正则修正后单测：arm64 优先/x64 回退/防误选 converters/win+linux 不变 全过
+
+### 遗留
+
+- Apple Developer 签名公证（$99/年）→ 解锁 macOS 自动更新与免"右键打开"
+- macOS 语言包裁剪（afterPack 加 mac 分支，可减 ~54M）
+- icon 1024 母版重制
+- converters-component 真机 macOS 验证
+- 下次发布建议对本轮改动补一次 workbuddy 审查
 
 > AI生成
