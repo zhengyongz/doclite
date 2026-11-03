@@ -1,0 +1,70 @@
+# 构建验证（不发版）：master 推送与 PR 时跑三平台打包，
+# 让"配置写错"在 PR 阶段暴露，而不是发版时才发现
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app & converters bundle
+        run: npm run build
+
+      - name: Generate icns (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p AppIcon.iconset
+          sips -z 16 16   build/icon.png --out AppIcon.iconset/icon_16x16.png
+          sips -z 32 32   build/icon.png --out AppIcon.iconset/icon_16x16@2x.png
+          sips -z 32 32   build/icon.png --out AppIcon.iconset/icon_32x32.png
+          sips -z 64 64   build/icon.png --out AppIcon.iconset/icon_32x32@2x.png
+          sips -z 128 128 build/icon.png --out AppIcon.iconset/icon_128x128.png
+          sips -z 256 256 build/icon.png --out AppIcon.iconset/icon_128x128@2x.png
+          sips -z 256 256 build/icon.png --out AppIcon.iconset/icon_256x256.png
+          sips -z 512 512 build/icon.png --out AppIcon.iconset/icon_256x256@2x.png
+          sips -z 512 512 build/icon.png --out AppIcon.iconset/icon_512x512.png
+          cp build/icon.png AppIcon.iconset/icon_512x512@2x.png
+          iconutil -c icns AppIcon.iconset -o build/icon.icns
+
+      - name: Package (macOS)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux deb --publish never
+
+      # 不上传资产、不创建 Release、不跑 pack-converters（CI 只验证主包构建链路）

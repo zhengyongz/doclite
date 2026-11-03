@@ -1,0 +1,93 @@
+# 三平台自动构建与发版：推 v* tag 触发（workflow_dispatch 仅供调试，不打 tag 不上传）
+# 关键约定：
+#   - 只缓存 ~/.npm（setup-node cache:'npm'），绝不缓存 node_modules——postinstall 的
+#     patch-package 必须每次执行，否则 foliate-js 补丁不生效
+#   - electron-builder 一律 --publish never，Release 统一由 softprops/action-gh-release 上传
+#     （package.json 里 build.publish 的 github provider 仅为 latest.yml 元数据生成所需）
+#   - fail-fast: false —— 单平台失败不影响其余平台产出
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm' # 只缓存 npm 缓存目录，node_modules 不缓存（npm ci 每次全量装）
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app & converters bundle
+        run: npm run build
+
+      # ---------- macOS：先用 sips+iconutil 生成 icns（构建产物，不入库）再打包 ----------
+      - name: Generate icns (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p AppIcon.iconset
+          sips -z 16 16   build/icon.png --out AppIcon.iconset/icon_16x16.png
+          sips -z 32 32   build/icon.png --out AppIcon.iconset/icon_16x16@2x.png
+          sips -z 32 32   build/icon.png --out AppIcon.iconset/icon_32x32.png
+          sips -z 64 64   build/icon.png --out AppIcon.iconset/icon_32x32@2x.png
+          sips -z 128 128 build/icon.png --out AppIcon.iconset/icon_128x128.png
+          sips -z 256 256 build/icon.png --out AppIcon.iconset/icon_128x128@2x.png
+          sips -z 256 256 build/icon.png --out AppIcon.iconset/icon_256x256.png
+          sips -z 512 512 build/icon.png --out AppIcon.iconset/icon_256x256@2x.png
+          sips -z 512 512 build/icon.png --out AppIcon.iconset/icon_512x512.png
+          cp build/icon.png AppIcon.iconset/icon_512x512@2x.png
+          iconutil -c icns AppIcon.iconset -o build/icon.icns
+
+      - name: Package (macOS)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux deb --publish never
+
+      # 转换组件 zip + sha256（全平台生成；deb 分支仅 Linux 执行，脚本内置 platform 判断）
+      - name: Pack converters component
+        run: node build/pack-converters.cjs
+
+      # ---------- 上传资产（仅 tag 推送时；workflow_dispatch 调试跳过） ----------
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.zip.blockmap
+            release/*.deb
+            release/*.yml
+            release/*.sha256

@@ -52,6 +52,17 @@ function notifyRenderer() {
   mainWindow.webContents.send('doclite:open-file-changed')
 }
 
+// macOS open-file 事件处理（模块顶层注册：macOS 双击文件启动时该事件早于 whenReady 触发，
+// 注册在 whenReady 内会丢失首个事件，表现为“应用打开了但文件没载入”）
+app.on('open-file', (e, filePath) => {
+  e.preventDefault()
+  const lower = filePath.toLowerCase()
+  if (['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].some(ext => lower.endsWith(ext))) {
+    pendingFilePath = filePath
+    if (mainWindow) notifyRenderer()
+  }
+})
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -124,6 +135,10 @@ ipcMain.handle('doclite:get-open-file', async () => {
 app.whenReady().then(() => {
   mainWindow = createWindow()
 
+  // 冷启动时 open-file（顶层监听）可能已设置待打开文件：窗口就绪后补推一次，
+  // 供渲染层拉取消费（拉取通道消费即清空，不会双载）
+  if (pendingFilePath) notifyRenderer()
+
   // 自动升级模块：注册 IPC（检查/下载/剪贴板/打开安装包）+ 启动 3 秒后静默检查
   registerUpdater()
 
@@ -150,16 +165,7 @@ app.whenReady().then(() => {
     }, 6000)
   }
 
-  // macOS open-file 事件处理
-  app.on('open-file', (e, filePath) => {
-    e.preventDefault()
-    const lower = filePath.toLowerCase()
-    if (['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].some(ext => lower.endsWith(ext))) {
-      pendingFilePath = filePath
-      if (mainWindow) notifyRenderer()
-    }
-  })
-
+// macOS activate：dock 图标点击重建窗口（配合下方 window-all-closed 不退出）
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
@@ -167,6 +173,7 @@ app.whenReady().then(() => {
   })
 })
 
+// macOS 惯例：关窗不退出应用（dock 图标保留，点击可重新激活）；其余平台退出
 app.on('window-all-closed', () => {
-  app.quit()
+  if (process.platform !== 'darwin') app.quit()
 })

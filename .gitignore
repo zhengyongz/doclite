@@ -8,6 +8,9 @@ dist-ssr/
 # Electron build output
 release/
 
+# macOS 图标构建产物（CI 上由 sips/iconutil 生成，不入库）
+build/icon.icns
+
 # .deb packages
 *.deb
 

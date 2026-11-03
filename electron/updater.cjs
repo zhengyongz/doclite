@@ -11,6 +11,7 @@ const { execFile } = require('child_process')
 
 const REPO = 'zhengyongz/doclite'
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`
+const RELEASE_PAGE_URL = `https://github.com/${REPO}/releases/latest` // macOS 手动更新引导用
 const SUB_DIR = 'DocLite' // 下载目录下的子目录名
 const CACHE_TTL = 60_000 // 检查结果缓存时间（防高频重复请求 GitHub API）
 const IDLE_TIMEOUT = 30_000 // 网络空闲超时（30 秒无数据即算失败，非总时长限制）
@@ -78,7 +79,14 @@ function pickAsset(assets, platform) {
   if (platform === 'linux') {
     return assets.find((a) => /^doclite_\d+\.\d+\.\d+_amd64\.deb$/.test(a.name)) || null
   }
-  return null // macOS 暂无发布
+  // macOS（v0.6.0+）：一期仅手动更新——无 Developer ID 签名时 electron-updater 的 zip 替换
+  // 会被 Gatekeeper 阻止，自动更新必失败；识别 zip 资产仅用于弹窗展示版本信息，引导手动下载 DMG
+  if (platform === 'darwin') {
+    return assets.find((a) => /^DocLite-.*-arm64\.zip$/.test(a.name))
+      || assets.find((a) => /^DocLite-.*-x64\.zip$/.test(a.name))
+      || null
+  }
+  return null // 其他平台暂无发布
 }
 
 // ---------- 补充：下载器主入口优先尝试差量引擎（见函数内注释） ----------
@@ -179,6 +187,20 @@ async function check({ force = false } = {}) {
           sha256Url: shaAsset ? shaAsset.browser_download_url : null,
         }
       : null
+
+    // v0.6.0+ macOS：手动更新引导（一期不做自动更新）——在更新说明尾部追加下载指引，
+    // 用户在更新弹窗内即可看到 Release 链接与架构选择说明（主进程侧完成，不改渲染层）
+    if (process.platform === 'darwin' && result.hasUpdate) {
+      const manualNote = [
+        '',
+        '---',
+        '【macOS 更新说明】当前版本暂不支持自动更新，请手动下载安装：',
+        RELEASE_PAGE_URL,
+        'Apple Silicon（M 系列芯片）下载 -arm64.dmg；Intel 机型下载 -x64.dmg。',
+      ].join('\n')
+      result.releaseNotes = (result.releaseNotes || '') + manualNote
+      result.manualDownload = true
+    }
 
     cachedState = { ts: Date.now(), result }
   } catch (err) {
@@ -398,6 +420,14 @@ async function download(assetOverride) {
     if (win && !win.isDestroyed()) win.webContents.send('updater:status', status)
   }
   let lastSend = 0 // 进度事件节流（差量与传统全量两路径共用）
+
+  // v0.6.0+ macOS：不进入下载流程——无 Developer ID 签名时 zip 替换必被 Gatekeeper 阻止，
+  // 自动更新必失败。此处打开 Release 页引导手动下载 DMG，友好文案经 IPC error 返回（渲染层展示）。
+  if (process.platform === 'darwin' && !assetOverride) {
+    try { await shell.openExternal(RELEASE_PAGE_URL) } catch { /* 浏览器打开失败不影响提示 */ }
+    downloading = false
+    throw new Error('macOS 暂不支持自动更新：已打开下载页面，请手动下载 DMG 安装（Apple Silicon 选 -arm64，Intel 选 -x64）')
+  }
 
   const dir = path.join(app.getPath('downloads'), SUB_DIR)
   const target = path.join(dir, path.basename(asset.name)) // basename 防路径穿越

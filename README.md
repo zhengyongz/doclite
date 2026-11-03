@@ -81,6 +81,19 @@ sudo dpkg -r doclite
 
 下载 `.exe` 安装包，双击安装即可。安装后支持文件关联。
 
+### macOS (dmg)
+
+从 [Release 页面](https://github.com/zhengyongz/doclite/releases/latest) 下载对应架构的 `.dmg`：
+
+- **Apple Silicon（M 系列芯片）**：`DocLite-x.x.x-arm64.dmg`
+- **Intel 机型**：`DocLite-x.x.x-x64.dmg`
+
+打开 dmg，将 DocLite 拖入「应用程序」文件夹即可。
+
+**首次打开**：由于本应用未做 Apple 开发者签名（省去 $99/年账号成本），macOS Gatekeeper 会拦截"直接双击打开"。请**右键点击应用 → 「打开」→ 再点「打开」**确认一次（或到「系统设置 → 隐私与安全性」点「仍要打开」）。这是一切未签名应用的通行做法，仅首次需要。
+
+> macOS 版更新：应用内点击"下载更新"会打开 Release 页面，请手动下载新版 dmg 覆盖安装（无 Apple 签名时自动更新会被 Gatekeeper 阻止；待后续完成签名后开放）。
+
 ### 从源码构建
 
 ```bash
@@ -100,6 +113,8 @@ npm run build && npx electron-builder --linux deb
 # 构建 NSIS 包（Windows）
 npm run build && npx electron-builder --win nsis
 ```
+
+**三平台自动构建**：推送 `v*` 标签即触发 GitHub Actions（`.github/workflows/release.yml`）自动产出 macOS（dmg/zip × 双架构）、Windows（exe + blockmap）、Linux（deb + 转换组件）全部产物并挂到 Release 页面。macOS 图标（icon.icns）在 CI 上由 `sips`/`iconutil` 从 `build/icon.png` 生成，不入库。
 
 ## 项目结构
 
