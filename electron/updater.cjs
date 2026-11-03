@@ -80,10 +80,12 @@ function pickAsset(assets, platform) {
     return assets.find((a) => /^doclite_\d+\.\d+\.\d+_amd64\.deb$/.test(a.name)) || null
   }
   // macOS（v0.6.0+）：一期仅手动更新——无 Developer ID 签名时 electron-updater 的 zip 替换
-  // 会被 Gatekeeper 阻止，自动更新必失败；识别 zip 资产仅用于弹窗展示版本信息，引导手动下载 DMG
+  // 会被 Gatekeeper 阻止，自动更新必失败；识别 zip 资产仅用于弹窗展示版本信息，引导手动下载 DMG。
+  // 命名注意（electron-builder 历史怪癖）：arm64 zip 为「*-arm64-mac.zip」，x64 zip 不带 arch
+  // 后缀、直接为「*-mac.zip」——务必先排除 arm64 再匹配 x64。
   if (platform === 'darwin') {
-    return assets.find((a) => /^DocLite-.*-arm64\.zip$/.test(a.name))
-      || assets.find((a) => /^DocLite-.*-x64\.zip$/.test(a.name))
+    return assets.find((a) => /^DocLite-.*-arm64-mac\.zip$/.test(a.name))
+      || assets.find((a) => /^DocLite-.*-mac\.zip$/.test(a.name) && !/-arm64/.test(a.name))
       || null
   }
   return null // 其他平台暂无发布
