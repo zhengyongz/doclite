@@ -78,9 +78,10 @@ jobs:
         run: node build/pack-converters.cjs
 
       # 清理 electron-builder 调试文件与 Linux 无关元数据（AppImage 用，本项目 deb 走自研升级）
+      # 注意：必须用 Node 而非 rm——Windows runner 默认 shell 是 PowerShell，rm -f 会失败
       - name: Clean up non-release artifacts
         if: startsWith(github.ref, 'refs/tags/v')
-        run: rm -f release/builder-debug.yml release/latest-linux.yml
+        run: node -e "const fs=require('fs');for(const f of ['release/builder-debug.yml','release/latest-linux.yml']){try{fs.rmSync(f);console.log('removed',f)}catch{}}"
 
       # ---------- 上传资产（仅 tag 推送时；workflow_dispatch 调试跳过） ----------
       # overwrite_files：重跑（tag 复位重推）时覆盖同名旧资产
