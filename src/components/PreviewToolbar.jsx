@@ -1,5 +1,6 @@
 import { useFileStore } from '../context/FileContext'
 import { getExtension, FORMAT_META } from '../utils/fileHelpers'
+import { useI18n } from '../i18n'
 
 // Zoom icons
 function ZoomOutIcon({ className }) {
@@ -22,6 +23,7 @@ function ZoomInIcon({ className }) {
 
 export default function PreviewToolbar() {
   const { currentFile, zoomLevel, setZoom } = useFileStore()
+  const { t } = useI18n()
 
   if (!currentFile) return null
 
@@ -52,7 +54,7 @@ export default function PreviewToolbar() {
           onClick={() => setZoom(Math.max(minZoom, zoomLevel - zoomStep))}
           disabled={zoomLevel <= minZoom}
           className="p-1.5 rounded-md hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus-ring"
-          aria-label="缩小"
+          aria-label={t('toolbar.zoomOut')}
         >
           <ZoomOutIcon className="w-4 h-4" />
         </button>
@@ -63,7 +65,7 @@ export default function PreviewToolbar() {
           onClick={() => setZoom(Math.min(maxZoom, zoomLevel + zoomStep))}
           disabled={zoomLevel >= maxZoom}
           className="p-1.5 rounded-md hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus-ring"
-          aria-label="放大"
+          aria-label={t('toolbar.zoomIn')}
         >
           <ZoomInIcon className="w-4 h-4" />
         </button>

@@ -1,9 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { renderAsync } from 'docx-preview'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 
 export default function DocxRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [status, setStatus] = useState('loading')  // loading | ready | error
   const containerRef = useRef(null)
 
@@ -33,7 +35,7 @@ export default function DocxRenderer() {
     } catch (err) {
       console.error('[DocxRenderer] render error:', err)
       setStatus('error')
-      setError('Word 文档解析失败，文件可能已损坏或格式不正确')
+      setError(t('err.docx.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -56,7 +58,7 @@ export default function DocxRenderer() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
           </svg>
-          正在解析…
+          {t('renderer.docx.loading')}
         </div>
       )}
     </div>

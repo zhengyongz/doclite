@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useFileStore } from '../context/FileContext'
 import { validateFile, getExtension, FORMAT_META } from '../utils/fileHelpers'
+import { useI18n } from '../i18n'
 
 // ---------- Icons (inline SVG) ----------
 function UploadIcon({ className }) {
@@ -33,6 +34,7 @@ function FileIcon({ className }) {
 // ---------- Component ----------
 export default function UploadZone() {
   const { currentFile, setFile, setError, clearFile } = useFileStore()
+  const { t, ts } = useI18n()
   const [dragging, setDragging] = useState(false)
   const inputId = 'file-upload-input'
 
@@ -42,7 +44,7 @@ export default function UploadZone() {
   const handleFile = useCallback((file) => {
     const err = validateFile(file)
     if (err) {
-      setError(err)
+      setError(ts(err))
       return
     }
     setFile({
@@ -51,7 +53,7 @@ export default function UploadZone() {
       type: file.type,
       file,          // keep the raw File object for later rendering
     })
-  }, [setFile, setError])
+  }, [setFile, setError, ts])
 
   // Drag events
   const onDragOver = useCallback((e) => { e.preventDefault(); setDragging(true) }, [])
@@ -98,10 +100,10 @@ export default function UploadZone() {
       >
         <UploadIcon className="w-8 h-8 text-ink-400" />
         <p className="text-sm font-medium text-ink-600">
-          拖拽文件到此处，或<span className="text-accent-600">点击上传</span>
+          {t('upload.drop')} <span className="text-accent-600">{t('upload.click')}</span>
         </p>
         <p className="text-xs text-ink-400">
-          支持 .docx / .xlsx / .xls / .pptx / .pdf / .azw3 / .mobi / .md，最大 100 MB（MD 最大 5 MB）
+          {t('upload.hint')}
         </p>
         <input
           id={inputId}
@@ -109,7 +111,7 @@ export default function UploadZone() {
           accept={acceptStr}
           onChange={onInputChange}
           className="sr-only"
-          aria-label="选择文件"
+          aria-label={t('upload.selectFile')}
         />
       </label>
 
@@ -133,8 +135,8 @@ export default function UploadZone() {
           <button
             onClick={(e) => { e.stopPropagation(); clearFile() }}
             className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-ink-100 transition-colors focus-ring"
-            aria-label="移除文件"
-            title="移除文件"
+            aria-label={t('upload.remove')}
+            title={t('upload.remove')}
           >
             <XIcon className="w-4 h-4 text-ink-400" />
           </button>

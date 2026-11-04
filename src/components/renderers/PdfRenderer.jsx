@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 
 // Configure pdf.js worker (Vite handles the URL import)
 import * as pdfjsLib from 'pdfjs-dist'
@@ -15,6 +16,7 @@ const MAX_RENDERED_PAGES = 20
 
 export default function PdfRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [numPages, setNumPages] = useState(0)
   const [pageHeights, setPageHeights] = useState([]) // 每页高度(px)用于占位
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
@@ -53,7 +55,7 @@ export default function PdfRenderer() {
       setPreviewStatus('ready')
     } catch (err) {
       console.error('[PdfRenderer] load error:', err)
-      setError('PDF 文件解析失败，文件可能已损坏或受密码保护')
+      setError(t('err.pdf.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -171,7 +173,7 @@ export default function PdfRenderer() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        <span>正在加载 PDF…</span>
+        <span>{t('renderer.pdf.loading')}</span>
       </div>
     )
   }

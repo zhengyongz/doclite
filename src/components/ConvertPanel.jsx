@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useFileStore } from '../context/FileContext'
 import { getExtension } from '../utils/fileHelpers'
 import { useConverters } from '../useConverters'
+import { useI18n } from '../i18n'
 // 注意：不再直接 import converters.js —— 转换库已拆为独立可选组件（安装时不存在于主包），
 // 运行时经 useConverters().convert() 从 window.DocLiteConverters 懒加载。
 
@@ -56,6 +57,7 @@ function SpinnerIcon({ className }) {
 
 export default function ConvertPanel() {
   const { currentFile, setError, isConverting, setConverting, setConvertProgress, convertProgress } = useFileStore()
+  const { t, ts } = useI18n()
   const [highQuality, setHighQuality] = useState(false)
   const { status, api, busy, error: compError, notice, outdated, appVersion, install, uninstall, convert } = useConverters()
 
@@ -69,8 +71,8 @@ export default function ConvertPanel() {
   if (ext === '.docx' || ext === '.xlsx' || ext === '.xls' || ext === '.pptx') {
     conversions.push({
       key: 'to-pdf',
-      label: '导出为 PDF',
-      description: '将文档转换为 PDF 格式',
+      label: t('convert.exportPdf'),
+      description: t('convert.exportPdfDesc'),
       icon: PdfIcon,
       color: 'text-red-500',
     })
@@ -80,22 +82,22 @@ export default function ConvertPanel() {
     conversions.push(
       {
         key: 'to-docx',
-        label: '导出为 Word (.docx)',
-        description: '将 PDF 转换为可编辑的 Word 文档',
+        label: t('convert.exportWord'),
+        description: t('convert.exportWordDesc'),
         icon: WordIcon,
         color: 'text-blue-500',
       },
       {
         key: 'to-png',
-        label: '导出为图片 (PNG)',
-        description: '将每页 PDF 导出为高清 PNG 图片',
+        label: t('convert.exportPng'),
+        description: t('convert.exportPngDesc'),
         icon: ImageIcon,
         color: 'text-green-500',
       },
       {
         key: 'to-azw3',
-        label: '导出为电子书 (MOBI)',
-        description: '将 PDF 转换为 Kindle 电子书格式',
+        label: t('convert.exportMobi'),
+        description: t('convert.exportMobiDesc'),
         icon: BookIcon,
         color: 'text-purple-500',
       },
@@ -121,7 +123,7 @@ export default function ConvertPanel() {
       }, { highQuality })
     } catch (err) {
       console.error('[ConvertPanel] conversion error:', err)
-      setError(`转换失败：${err.message || '未知错误'}`)
+      setError(t('convert.failed', { msg: ts(err.message) }))
     } finally {
       setConverting(false)
       setConvertProgress(null)
@@ -132,8 +134,8 @@ export default function ConvertPanel() {
     <div className="rounded-lg border border-ink-200 bg-white px-3 py-3 shadow-soft">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">
-          格式转换{status?.installed ? (
-            <span className="ml-1.5 text-[10px] text-ink-300 normal-case">（组件 v{status.version}）</span>
+          {t('convert.title')}{status?.installed ? (
+            <span className="ml-1.5 text-[10px] text-ink-300 normal-case">{t('convert.componentTag', { version: status.version })}</span>
           ) : null}
         </p>
         {isConverting && convertProgress && (
@@ -147,31 +149,31 @@ export default function ConvertPanel() {
       {!status?.installed && (
         <div className="rounded-lg border border-dashed border-ink-200 bg-ink-50/50 px-3 py-3">
           <p className="text-xs text-ink-500 leading-relaxed">
-            文档格式转换为可选功能，当前未安装。安装后可在这里将文档导出为 PDF、Word、图片、电子书等格式。
+            {t('convert.notInstalled')}
           </p>
           <button
             disabled={busy}
             onClick={install}
             className="mt-2.5 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-accent-300 bg-accent-50 text-accent-700 text-xs font-medium hover:bg-accent-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy ? '正在安装，请稍候…' : '安装转换组件（约 1MB，仅需一次）'}
+            {busy ? t('convert.installing') : t('convert.installBtn')}
           </button>
           {compError && (
-            <p className="mt-2 text-[11px] text-red-500 break-all">{compError}</p>
+            <p className="mt-2 text-[11px] text-red-500 break-all">{ts(compError)}</p>
           )}
         </div>
       )}
 
       {status?.installed && (
         <div className="mb-2 flex items-center justify-between text-[10px] text-ink-300">
-          <span>转换功能由可选组件提供</span>
+          <span>{t('convert.providedByComponent')}</span>
           <span className="flex items-center gap-2 shrink-0">
             <button className="underline hover:text-ink-500" disabled={busy} onClick={install}>
-              {busy ? '处理中…' : outdated ? `更新到 v${appVersion}` : '重装组件'}
+              {busy ? t('convert.installing') : outdated ? t('convert.updateTo', { version: appVersion }) : t('convert.reinstall')}
             </button>
             {status.source === 'user' && (
               <button className="underline hover:text-red-400" disabled={busy} onClick={uninstall}>
-                移除
+                {t('convert.remove')}
               </button>
             )}
           </span>
@@ -181,15 +183,15 @@ export default function ConvertPanel() {
         <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
           <p className="flex-1 text-[11px] leading-relaxed text-amber-700">
             {xlsNeedsUpdate
-              ? '当前组件不支持 .xls 转换，请先更新组件。'
-              : `组件版本落后于应用（v${status.version} → v${appVersion}），建议更新。`}
+              ? t('convert.outdated.xls')
+              : t('convert.outdated.adv', { cur: status.version, app: appVersion })}
           </p>
           <button
             disabled={busy}
             onClick={install}
             className="shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy ? '更新中…' : `更新到 v${appVersion}`}
+            {busy ? t('convert.installing') : t('convert.updateTo', { version: appVersion })}
           </button>
         </div>
       )}
@@ -199,7 +201,7 @@ export default function ConvertPanel() {
       {conversions.some((c) => c.key === 'to-pdf') && !isConverting && status?.installed && (
         <label
           className="flex items-center gap-1.5 mb-2 cursor-pointer select-none"
-          title="标准：屏幕阅读清晰，体积小速度快；高清：约 200 DPI 打印级，体积约为标准的 2.5 倍"
+          title={t('convert.hdTitle')}
         >
           <input
             type="checkbox"
@@ -207,7 +209,7 @@ export default function ConvertPanel() {
             onChange={(e) => setHighQuality(e.target.checked)}
             className="accent-blue-500 w-3 h-3"
           />
-          <span className="text-[11px] text-ink-500">高清导出（打印级，体积较大）</span>
+          <span className="text-[11px] text-ink-500">{t('convert.hdLabel')}</span>
         </label>
       )}
       <div className="flex flex-col gap-2">
@@ -219,7 +221,7 @@ export default function ConvertPanel() {
               key={key}
               onClick={() => handleConvert(key)}
               disabled={isConverting || !api || blocked}
-              title={blocked ? '当前组件不支持 .xls，请先更新组件' : (!api ? '转换组件加载中…' : undefined)}
+              title={blocked ? t('convert.blockedTitle') : (!api ? t('convert.loadingTitle') : undefined)}
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-ink-200 bg-white hover:border-accent-300 hover:bg-accent-50/40 transition-colors focus-ring group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isThisConverting ? (
@@ -237,11 +239,11 @@ export default function ConvertPanel() {
       </div>
       {isConverting && (
         <p className="mt-2 text-xs text-ink-400">
-          正在转换中，请稍候…
+          {t('convert.progress')}
         </p>
       )}
       {status?.installed && compError && (
-        <p className="mt-2 text-[11px] text-red-500 break-all">{compError}</p>
+        <p className="mt-2 text-[11px] text-red-500 break-all">{ts(compError)}</p>
       )}
     </div>
   )

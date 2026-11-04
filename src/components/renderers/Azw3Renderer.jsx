@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 import DOMPurify from 'dompurify'
 
 /**
@@ -11,6 +12,7 @@ import DOMPurify from 'dompurify'
  */
 export default function Azw3Renderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [bookData, setBookData] = useState(null) // { sections, toc, metadata, coverUrl }
   const [currentSection, setCurrentSection] = useState(0)
@@ -60,7 +62,7 @@ export default function Azw3Renderer() {
     } catch (err) {
       console.error('[Azw3Renderer] load error:', err)
       setStatus('error')
-      setError('电子书解析失败，文件可能已损坏或格式不正确')
+      setError(t('err.azw.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -97,7 +99,7 @@ export default function Azw3Renderer() {
       setSectionContents(prev => ({ ...prev, [index]: cleanHtml }))
     } catch (err) {
       console.error(`[Azw3Renderer] section ${index} render error:`, err)
-      setSectionContents(prev => ({ ...prev, [index]: '<p style="color:#999;text-align:center;padding:20px;">本章节渲染失败</p>' }))
+      setSectionContents(prev => ({ ...prev, [index]: t('renderer.azw.sectionFailed') }))
     }
   }, [sectionContents])
 
@@ -141,7 +143,7 @@ export default function Azw3Renderer() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        <span>正在解析电子书…</span>
+        <span>{t('renderer.azw.loading')}</span>
       </div>
     )
   }
@@ -150,8 +152,8 @@ export default function Azw3Renderer() {
   if (status === 'error') {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
-        <p className="text-sm font-medium text-red-500">解析失败</p>
-        <p className="text-xs text-ink-400">请检查文件是否为有效的 AZW3/MOBI 格式</p>
+        <p className="text-sm font-medium text-red-500">{t('renderer.azw.failed')}</p>
+        <p className="text-xs text-ink-400">{t('renderer.azw.failedHint')}</p>
       </div>
     )
   }
@@ -191,7 +193,7 @@ export default function Azw3Renderer() {
           className="block w-full text-left px-3 py-1.5 text-sm text-ink-600 hover:bg-accent-50 hover:text-accent-700 rounded-md transition-colors truncate"
           style={{ paddingLeft: `${12 + depth * 16}px` }}
         >
-          {item.label || '未命名章节'}
+          {item.label || t('renderer.azw.unnamed')}
         </button>
         {item.subitems?.map(child => renderTocItem(child, depth + 1))}
       </div>
@@ -204,11 +206,11 @@ export default function Azw3Renderer() {
       {showToc && (
         <div className="w-64 shrink-0 border-r border-ink-200 bg-white overflow-y-auto p-3">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">目录</p>
+            <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">{t('renderer.azw.toc')}</p>
             <button
               onClick={() => setShowToc(false)}
               className="text-ink-400 hover:text-ink-600"
-              aria-label="关闭目录"
+              aria-label={t('renderer.azw.closeToc')}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -220,7 +222,7 @@ export default function Azw3Renderer() {
               {toc.map(item => renderTocItem(item))}
             </div>
           ) : (
-            <p className="text-xs text-ink-400 text-center py-4">无目录信息</p>
+            <p className="text-xs text-ink-400 text-center py-4">{t('renderer.azw.noToc')}</p>
           )}
         </div>
       )}
@@ -238,11 +240,11 @@ export default function Azw3Renderer() {
               <line x1="3" y1="12" x2="21" y2="12"/>
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
-            目录
+            {t('renderer.azw.toc')}
           </button>
           <div className="flex-1 text-center">
             <span className="text-xs text-ink-400">
-              {currentSection + 1} / {totalSections} 章
+              {t('renderer.azw.chapterOf', { cur: currentSection + 1, total: totalSections })}
             </span>
           </div>
           <button
@@ -255,7 +257,7 @@ export default function Azw3Renderer() {
             disabled={currentSection === 0}
             className="px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            上一章
+            {t('renderer.azw.prevChapter')}
           </button>
           <button
             onClick={() => {
@@ -267,7 +269,7 @@ export default function Azw3Renderer() {
             disabled={currentSection >= totalSections - 1}
             className="px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            下一章
+            {t('renderer.azw.nextChapter')}
           </button>
         </div>
 
@@ -292,7 +294,7 @@ export default function Azw3Renderer() {
                 {coverUrl && (
                   <img
                     src={coverUrl}
-                    alt="封面"
+                    alt={t('renderer.azw.cover')}
                     className="mx-auto rounded-lg shadow-soft mb-4"
                     style={{ maxHeight: '400px', maxWidth: '100%', objectFit: 'contain' }}
                     onError={(e) => { e.target.style.display = 'none' }}
@@ -322,7 +324,7 @@ export default function Azw3Renderer() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                 </svg>
-                正在加载章节内容…
+                {t('renderer.azw.loadingSection')}
               </div>
             )}
           </div>

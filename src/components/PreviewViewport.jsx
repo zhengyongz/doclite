@@ -1,5 +1,6 @@
 import { useFileStore } from '../context/FileContext'
 import { getExtension, SUPPORTED_EXTENSIONS } from '../utils/fileHelpers'
+import { useI18n } from '../i18n'
 import XlsxRenderer from './renderers/XlsxRenderer'
 import DocxRenderer from './renderers/DocxRenderer'
 import PdfRenderer from './renderers/PdfRenderer'
@@ -9,6 +10,7 @@ import MdRenderer from './renderers/MdRenderer'
 
 export default function PreviewViewport() {
   const { currentFile, zoomLevel } = useFileStore()
+  const { t } = useI18n()
 
   if (!currentFile) return null
 
@@ -35,9 +37,9 @@ export default function PreviewViewport() {
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
-            <p className="text-sm font-medium text-ink-500">不支持的格式</p>
+            <p className="text-sm font-medium text-ink-500">{t('viewport.unsupported')}</p>
             <p className="text-xs text-ink-400">
-              仅支持 {SUPPORTED_EXTENSIONS.join(' / ')} 格式
+              {t('viewport.supported', { formats: SUPPORTED_EXTENSIONS.join(' / ') })}
             </p>
           </div>
         )

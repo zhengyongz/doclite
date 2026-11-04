@@ -1,4 +1,7 @@
+import { useI18n } from '../i18n'
+
 export default function EmptyState() {
+  const { t } = useI18n()
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 text-center select-none">
       {/* Illustration – simple document stack */}
@@ -10,12 +13,12 @@ export default function EmptyState() {
         <line x1="38" y1="38" x2="52" y2="38" className="opacity-40" />
         <line x1="38" y1="44" x2="48" y2="44" className="opacity-40" />
       </svg>
-      <p className="text-base font-medium text-ink-400">尚未加载文件</p>
-      <p className="text-sm text-ink-300 mt-1">从左侧上传一份文档即可开始预览与转换</p>
+      <p className="text-base font-medium text-ink-400">{t('empty.title')}</p>
+      <p className="text-sm text-ink-300 mt-1">{t('empty.sub')}</p>
 
       {/* Conversion capability hint */}
       <div className="mt-6 max-w-sm">
-        <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">支持转换</p>
+        <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">{t('empty.convert')}</p>
         <div className="flex flex-wrap justify-center gap-2 text-xs">
           <span className="px-2.5 py-1 rounded-full border border-ink-200 bg-white text-ink-500">
             Word / Excel / PPT → PDF
@@ -24,11 +27,11 @@ export default function EmptyState() {
             PDF → Word
           </span>
           <span className="px-2.5 py-1 rounded-full border border-ink-200 bg-white text-ink-500">
-            PDF → PNG 图片
+            {t('empty.pdfToPng')}
           </span>
         </div>
         <p className="text-xs text-ink-300 mt-3">
-          所有转换均在浏览器本地完成，不会上传任何数据
+          {t('empty.note')}
         </p>
       </div>
     </div>

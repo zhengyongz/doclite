@@ -2,8 +2,10 @@
 // 自动升级状态管理：订阅主进程推送（自动检查/下载进度），暴露手动检查/下载/复制命令等动作。
 // 安全说明：copyInstallCmd / openInstaller 均无参（主进程记账，不跨信任边界传路径）。
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useI18n } from './i18n'
 
 export function useUpdater() {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false) // 弹窗开关（关闭不销毁状态，进度保留）
   const [phase, setPhase] = useState('idle') // idle|checking|available|upToDate|error|downloading|ready|installing|installed
   const [info, setInfo] = useState(null) // { currentVersion, latestVersion, publishedAt, releaseNotes, platform, asset }
@@ -25,7 +27,7 @@ export function useUpdater() {
     setInfo(r)
     if (!r.ok) {
       setPhase('error')
-      setErrorMsg(r.error || '检查失败')
+      setErrorMsg(r.error || t('updater.checkFailed'))
     } else if (r.hasUpdate) {
       setPhase('available')
     } else {
@@ -101,7 +103,7 @@ export function useUpdater() {
         setPhase('installed')
       } else {
         setPhase('ready')
-        setInstallNote(r?.error || '安装未完成')
+        setInstallNote(r?.error || t('updater.installIncomplete'))
       }
     } finally {
       startingRef.current = false

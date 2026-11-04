@@ -2,8 +2,10 @@
 // 转换组件状态管理：检测（安装/版本/来源）、应用内安装、卸载、懒加载组件 API
 import { useCallback, useEffect, useState } from 'react'
 import { loadConvertersApi, resetConvertersApi } from './utils/convertersLoader'
+import { useI18n } from './i18n'
 
 export function useConverters() {
+  const { t } = useI18n()
   const [status, setStatus] = useState(null) // null=检测中；{ installed, version, source }
   const [api, setApi] = useState(null) // 组件 API（已安装时懒加载）
   const [busy, setBusy] = useState(false) // 安装/卸载进行中
@@ -31,7 +33,7 @@ export function useConverters() {
     if (status?.installed) {
       loadConvertersApi()
         .then((m) => { if (!cancelled) setApi(m) })
-        .catch((e) => setError(`转换组件加载失败：${e.message}`))
+        .catch((e) => setError(t('converters.loadFailed', { msg: e.message })))
     } else {
       setApi(null)
     }
@@ -46,9 +48,9 @@ export function useConverters() {
     try {
       const r = await window.doclite?.installConverters?.()
       if (!r || !r.ok) {
-        setError((r && r.error) || '安装失败')
+        setError((r && r.error) || t('converters.installFailed'))
       } else {
-        setNotice(`转换组件 v${r.version || ''} 安装成功`)
+        setNotice(t('converters.installOk', { version: r.version || '' }))
         // 先重置已注入的旧组件（否则 convert() 仍用旧 bundle），再刷状态触发重新加载
         resetConvertersApi()
         setApi(null)
@@ -66,9 +68,9 @@ export function useConverters() {
     setNotice('')
     try {
       const r = await window.doclite?.uninstallConverters?.()
-      if (!r || !r.ok) setError((r && r.error) || '卸载失败')
+      if (!r || !r.ok) setError((r && r.error) || t('converters.uninstallFailed'))
       else {
-        setNotice('转换组件已移除（浏览功能不受影响）')
+        setNotice(t('converters.uninstallOk'))
         resetConvertersApi()
         setApi(null)
         await refresh()
@@ -81,7 +83,7 @@ export function useConverters() {
   // 转换入口（供 ConvertPanel 调用；组件未安装时 throw）
   const convert = useCallback(async (file, ext, key, onProgress, opts) => {
     const m = api || (await loadConvertersApi())
-    if (!m) throw new Error('文件转换功能未安装')
+    if (!m) throw new Error(t('converters.notInstalled'))
     return m.convertFile(file, ext, key, onProgress, opts)
   }, [api])
 

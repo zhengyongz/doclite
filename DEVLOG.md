@@ -485,6 +485,32 @@ eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
 - **验证**：npm run build 通过；冒烟实测 .xls 双 sheet 预览正常、沉浸侧栏收起 transform=-336px、平台类模拟截图正常；两个 workflow YAML 解析通过
 - **留待下轮**：M4（macOS 更新弹窗文案/交互）、M6（哈希期望值走镜像的信任根）、L5（xlsx CVE，评估 SheetJS 官方 CDN）、L6（action pin commit SHA）
 
+### 5. 中/英文界面（i18n，2026-11-04）
+
+用户要求 GitHub 站点的自述/发行说明双语化，并给应用加英文界面（原确认全中文、无 i18n）。
+
+- **文档双语化**：新增 `README.en-US.md`（完整英文版）；README.md 顶部加 [English] 入口；v0.7.0 发布说明补英文版
+- **应用 i18n**：新建 `src/i18n.jsx`（零第三方依赖）——中英双字典 + React Context（I18nProvider / useI18n），`t(key, vars)` 支持插值；语言首次按系统语言检测、顶栏按钮手动切换、localStorage 记住
+- **覆盖范围**：约 17 个组件的全部界面文案（Header/Sidebar/UploadZone/EmptyState/Toolbar/Viewport/ConvertPanel/UpdateDialog/ErrorToast + 6 个渲染器 + useConverters），以及主进程/转换器经 IPC 回传的错误与提示（以中文原文为 key 映射英文，未收录原样回退；ErrorToast 统一走 t 透传翻译）
+- **语言入口**：Header 右侧“EN / 中文”按钮；document.title 随语言切换
+- **验证**：npm run build 通过；浏览器实测中文 ↔ 英文切换与刷新记忆正常（localStorage=doclite-lang）；Electron 冒烟 .xls 预览与沉浸侧栏无回归
+- **待办**：i18n 属新功能，按发布规范需 workbuddy 审查后再发版；后续可评估把主进程错误也改为“错误码 + 渲染层文案”以彻底解耦
+
+### 6. i18n workbuddy 审查修复（0.8.0 发布前，2026-11-04）
+
+审查报告：`~/文档/Obsidian Vault/检查doclite-i18n双语界面.md`。按结论修复：
+
+- **H1**：ConvertPanel 两处 `{compError}` 改 `{ts(compError)}`；`ts()` 补「组件安装/校验」前缀规则（含不允许文件、解压失败、需升级主程序、当前版本无匹配包）
+- **H2**：zh 字典补 `renderer.azw.sectionFailed`（此前 en 有 zh 缺，中文用户会看到原始 key）；字典改为纯文本（去掉内联 HTML，杜绝翻译资源注入面）
+- **M1**：UpdateDialog 错误主文案 `t(errorMsg)` 改 `ts(errorMsg)`（正则兜底才生效）；`ts()` 补更新链路规则（安装失败：、GitHub 响应异常、下载失败(HTTP)、已自动切换、feed 版本不高、源均失败、·差量、源过慢）
+- **M2**：`useUpdater` 接入 `useI18n`，兜底文案用 t('updater.checkFailed' / 'updater.installIncomplete')（此前整文件漏接，死键复用）
+- **M3**：`App.jsx` `useOpenFileFromArgs` 改用 `tRef.current`（闭包 bug——切英文后文件关联报错仍中文）；Md/Azw3 的瞬态文案遗留下轮
+- **M4**：`document.documentElement.lang` 随语言切换（a11y）
+- **M5**：`resolve()` 在 DEV 下对「en 缺 key」告警；`ts()` 增加 `s==null` 守卫
+- **低优**：L1（补转换器脚本两条中文错误键）、L3（注释/import 归位、顶部说明补「勿把 t 加依赖」）、L5（语言切换 aria-label 动态说明目标语言）、L6（en README 顶部改英文引导）、L7（`navigator.languages` 优先）
+- **验证**：npm run build 通过；Electron 冒烟 .xls 预览 + 沉浸侧栏收起 -336px 无回归
+- **遗留**：M3 的 MdRenderer notices / Azw 章节失败占位文案（瞬态）不随切语言重算，下轮改存 key；导出物（PDF/Word/MOBI）内嵌文案仍是中文（L2，成本高，记为已知限制）
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）

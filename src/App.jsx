@@ -9,14 +9,19 @@ import ConvertPanel from './components/ConvertPanel'
 import ErrorToast from './components/ErrorToast'
 import UpdateDialog from './components/UpdateDialog'
 import { useUpdater } from './useUpdater'
+import { useI18n } from './i18n'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getExtension } from './utils/fileHelpers'
 
 // ---------- 文件关联：加载主进程待打开的文件 ----------
 function useOpenFileFromArgs() {
   const { setFile, setError } = useFileStore()
+  const { t } = useI18n()
   const setFileRef = useRef(setFile)
   const setErrorRef = useRef(setError)
+  // 用 ref 跟随最新 t：该 useEffect 只在首帧注册，切语言后需用最新文案（workbuddy M3）
+  const tRef = useRef(t)
+  tRef.current = t
   setFileRef.current = setFile
   setErrorRef.current = setError
 
@@ -30,7 +35,7 @@ function useOpenFileFromArgs() {
       // 校验扩展名（与上传入口一致）
       const ext = getExtension(info.name)
       if (!['.pdf', '.docx', '.xlsx', '.xls', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].includes(ext)) {
-        setErrorRef.current(`不支持的文件类型：${info.name}`)
+        setErrorRef.current(tRef.current('err.file.unsupported', { name: info.name }))
         return
       }
       setFileRef.current({
@@ -41,7 +46,7 @@ function useOpenFileFromArgs() {
       })
     } catch (err) {
       console.error('[App] 打开外部文件失败:', err)
-      setErrorRef.current(`打开文件失败：${err.message || '未知错误'}`)
+      setErrorRef.current(tRef.current('err.file.openFailed', { msg: (err && err.message) || '' }))
     }
   }
 

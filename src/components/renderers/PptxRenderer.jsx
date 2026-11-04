@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import JSZip from 'jszip'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 
 // ---------- Slide nav icons ----------
 function ChevronLeft({ className }) {
@@ -30,6 +31,7 @@ const emuToPx = (emu) => emu / EMU * 96
  */
 export default function PptxRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [slides, setSlides] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentSlide, setCurrentSlide] = useState(0)
@@ -183,7 +185,7 @@ export default function PptxRenderer() {
       setPreviewStatus('ready')
     } catch (err) {
       console.error('[PptxRenderer] parse error:', err)
-      setError('PPT 文件解析失败，文件可能已损坏或格式不正确')
+      setError(t('err.pptx.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -213,7 +215,7 @@ export default function PptxRenderer() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        <span>正在解析 PPT…</span>
+        <span>{t('renderer.pptx.loading')}</span>
       </div>
     )
   }
@@ -221,7 +223,7 @@ export default function PptxRenderer() {
   if (slides.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-ink-400 text-sm">
-        未找到幻灯片内容
+        {t('renderer.pptx.empty')}
       </div>
     )
   }
@@ -305,7 +307,7 @@ export default function PptxRenderer() {
           className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm text-ink-600 hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus-ring"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一页
+          {t('renderer.pptx.prev')}
         </button>
 
         <span className="text-sm text-ink-500 font-mono tabular-nums">
@@ -317,7 +319,7 @@ export default function PptxRenderer() {
           disabled={currentSlide === slides.length - 1}
           className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm text-ink-600 hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus-ring"
         >
-          下一页
+          {t('renderer.pptx.next')}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

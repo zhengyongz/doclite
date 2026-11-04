@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 
 // ---------- Tab icon ----------
 function SheetIcon({ className }) {
@@ -17,6 +18,7 @@ function SheetIcon({ className }) {
 
 export default function XlsxRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [sheets, setSheets] = useState([])      // [{ name, rows[][] }]
   const [activeIdx, setActiveIdx] = useState(0)
 
@@ -38,7 +40,7 @@ export default function XlsxRenderer() {
       setPreviewStatus('ready')
     } catch (err) {
       console.error('[XlsxRenderer] parse error:', err)
-      setError('Excel 文件解析失败，文件可能已损坏或格式不正确')
+      setError(t('err.xlsx.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -49,7 +51,7 @@ export default function XlsxRenderer() {
   if (sheets.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-ink-400 text-sm">
-        正在解析…
+        {t('renderer.xlsx.loading')}
       </div>
     )
   }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useFileStore } from '../../context/FileContext'
+import { useI18n } from '../../i18n'
 
 // 字符数硬上限（约 2M 字符）：防扩展名伪装的超大文本拖垮主线程
 // 超限时仅渲染前 200K 字符并给出提示条（workbuddy M1）
@@ -27,6 +28,7 @@ marked.use({
 
 export default function MdRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
+  const { t } = useI18n()
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [html, setHtml] = useState('')
   const [notices, setNotices] = useState([]) // 文档顶部提示条（编码/截断）
@@ -49,13 +51,13 @@ export default function MdRenderer() {
       // 编码检测：替换字符占比过高时提示疑似非 UTF-8（仍渲染，顶部提示条引导）
       const bad = (text.match(/\uFFFD/g) || []).length
       if (bad > 0 && bad / text.length > 0.001) {
-        setNotices((n) => [...n, '检测到疑似非 UTF-8 编码，部分内容可能显示为乱码，建议以 UTF-8 保存后重新打开'])
+        setNotices((n) => [...n, t('renderer.md.noticeUtf8')])
       }
 
       // 超大文本降级：截断预览，避免主线程长时间阻塞（workbuddy M1）
       if (text.length > HARD_LIMIT) {
         text = text.slice(0, TRUNCATE_TO)
-        setNotices((n) => [...n, `文档过大（超过 ${HARD_LIMIT.toLocaleString()} 字符），已截断仅预览前 ${TRUNCATE_TO.toLocaleString()} 字符`])
+        setNotices((n) => [...n, t('renderer.md.noticeTruncate', { limit: HARD_LIMIT.toLocaleString(), keep: TRUNCATE_TO.toLocaleString() })])
       }
 
       // marked 解析（GFM：表格/删除线/任务列表）→ DOMPurify 消毒（L6：禁内联 style 防视觉覆盖伪造 UI）
@@ -71,7 +73,7 @@ export default function MdRenderer() {
       console.error('[MdRenderer] render error:', err)
       if (seq !== seqRef.current) return
       setStatus('error')
-      setError('Markdown 解析失败，文件可能已损坏')
+      setError(t('err.md.parse'))
     }
   }, [currentFile, setPreviewStatus, setError])
 
@@ -128,7 +130,7 @@ export default function MdRenderer() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            正在解析…
+            {t('renderer.md.loading')}
           </div>
         )}
       </div>
