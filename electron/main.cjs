@@ -12,7 +12,7 @@ app.commandLine.appendSwitch('disable-software-rasterizer')
 // ---------- 文件关联：双击/打开方式传入的文件路径 ----------
 // 从 argv 提取待打开文件（过滤掉 Electron/Chromium 开关与隐臧 -- 开头参数）
 function extractFilePathFromArgv(argv) {
-  const supported = ['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown']
+  const supported = ['.pdf', '.docx', '.xlsx', '.xls', '.pptx', '.mobi', '.azw3', '.md', '.markdown']
   for (const arg of argv) {
     if (arg.startsWith('-')) continue
     if (arg.endsWith('.js') || arg.endsWith('.cjs')) continue
@@ -47,7 +47,9 @@ if (!gotLock) {
 
 let mainWindow = null
 function notifyRenderer() {
-  if (!mainWindow || pendingFilePath == null) return
+  // isDestroyed 必判：macOS 关窗不退出，mainWindow 引用可能仍非空但 webContents 已销毁，
+  // 此时向它 send 会抛 "Object has been destroyed"（workbuddy M5）
+  if (!mainWindow || mainWindow.isDestroyed() || pendingFilePath == null) return
   // renderer 启动后轮询/事件双通道：优先 invoke 拉取，拉不到时窗口 focus 补拉
   mainWindow.webContents.send('doclite:open-file-changed')
 }
@@ -57,7 +59,7 @@ function notifyRenderer() {
 app.on('open-file', (e, filePath) => {
   e.preventDefault()
   const lower = filePath.toLowerCase()
-  if (['.pdf', '.docx', '.xlsx', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].some(ext => lower.endsWith(ext))) {
+  if (['.pdf', '.docx', '.xlsx', '.xls', '.pptx', '.mobi', '.azw3', '.md', '.markdown'].some(ext => lower.endsWith(ext))) {
     pendingFilePath = filePath
     if (mainWindow) notifyRenderer()
   }
@@ -72,6 +74,13 @@ function createWindow() {
     title: '轻快文档工具箱',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: true,
+    // macOS 平台风格（v0.7.0+）：标题栏并入界面（保留红绿灯按钮），窗口底色透明以透出
+    // 毛玻璃 vibrancy；Windows/Linux 保持系统标题栏不动
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      vibrancy: 'under-window',
+      backgroundColor: '#00000000',
+    } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -96,6 +105,11 @@ function createWindow() {
 
   // 移除默认菜单栏
   Menu.setApplicationMenu(null)
+
+  // 窗口关闭后置空引用（macOS 关窗不退出应用，否则 open-file 会打到已销毁窗口）
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
   return win
 }
 
@@ -146,20 +160,55 @@ app.whenReady().then(() => {
   registerConvertersComponent()
 
   // 冒烟测试模式（DOCLITE_SMOKE=1，仅源码环境）：转发渲染层日志，6 秒时截图后自动退出，用于无头回归验证
+  // DOCLITE_SMOKE_INTERACT=1（附加）：截第一张后模拟鼠标移到屏幕左缘，验证沉浸侧栏滑出（v0.7.0 沉浸交互）
+  // DOCLITE_SMOKE_DARWIN=1（附加）：再给页面手动挂 platform-darwin 类，静态预览 macOS 布局（无真机时的兜底检查）
   if (process.env.DOCLITE_SMOKE === '1' && !app.isPackaged) {
     mainWindow.webContents.on('console-message', (_e, _level, message) => {
       console.log('[renderer]', message)
     })
     setTimeout(async () => {
-      try {
-        const img = await mainWindow.webContents.capturePage()
-        const out = path.join(app.getPath('temp'), 'doclite-smoke.png')
-        fs.mkdirSync(path.dirname(out), { recursive: true })
-        fs.writeFileSync(out, img.toPNG())
-        console.log('[smoke] 截图已保存:', out)
-      } catch (e) {
-        console.log('[smoke] 截图失败:', e.message)
+      const work = mainWindow.webContents
+      const shoot = async (name) => {
+        try {
+          const img = await work.capturePage()
+          const out = path.join(app.getPath('temp'), name)
+          fs.mkdirSync(path.dirname(out), { recursive: true })
+          fs.writeFileSync(out, img.toPNG())
+          console.log('[smoke] 截图已保存:', out)
+        } catch (e) {
+          console.log('[smoke] 截图失败:', e.message)
+        }
       }
+      await shoot('doclite-smoke.png')
+
+      // 模拟真实鼠标路径：左缘热区 → 移入侧栏内部 → 移出到文档区 → 应防抖收起。
+      // 注意：sendInputEvent 是离散跳变，必须分步路径让 Chromium 对侧栏产生 enter/leave
+      // 事件（真实移动天然连续，此处模拟还原）；直接瞬移到右侧不会触发侧栏 mouseleave。
+      if (process.env.DOCLITE_SMOKE_INTERACT === '1') {
+        work.sendInputEvent({ type: 'mouseMove', x: 4, y: 500 })
+        await new Promise((r) => setTimeout(r, 700))
+        await shoot('doclite-smoke-sidebar-open.png')
+        work.sendInputEvent({ type: 'mouseMove', x: 200, y: 500 }) // 进入侧栏内部
+        await new Promise((r) => setTimeout(r, 300))
+        work.sendInputEvent({ type: 'mouseMove', x: 700, y: 500 }) // 离开侧栏到文档
+        await new Promise((r) => setTimeout(r, 800))
+        // DOM 实测：读侧栏 computed transform（视觉之外的硬证据；收起 ≈ translateX(-336px)）
+        const tf = await work.executeJavaScript(
+          "getComputedStyle(document.querySelector('.app-sidebar')).transform"
+        ).catch(() => 'N/A')
+        console.log('[smoke] 收起态 .app-sidebar transform =', tf)
+        await shoot('doclite-smoke-sidebar-closed.png')
+      }
+
+      // 手动切 platform-darwin 类 → 预览 macOS 布局（标题栏留白等）
+      if (process.env.DOCLITE_SMOKE_DARWIN === '1') {
+        await work.executeJavaScript(
+          "document.documentElement.className = document.documentElement.className.replace(/platform-\\w+/, 'platform-darwin')"
+        ).catch(() => {})
+        await new Promise((r) => setTimeout(r, 300))
+        await shoot('doclite-smoke-darwin.png')
+      }
+
       console.log('[smoke] 完成，正常退出')
       app.quit()
     }, 6000)

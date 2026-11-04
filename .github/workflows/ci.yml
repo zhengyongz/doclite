@@ -23,8 +23,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux
     runs-on: ${{ matrix.os }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # CI 只验证构建（--publish never），不需要 GH_TOKEN（workbuddy L7）
     steps:
       - uses: actions/checkout@v4
 

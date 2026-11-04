@@ -28,8 +28,8 @@ jobs:
           - os: ubuntu-latest
             platform: linux
     runs-on: ${{ matrix.os }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # 不在 job 级注入 GH_TOKEN：npm ci/postinstall 与 electron-builder 全程持有可写 token 属提权面，
+    # 仅在最后的“上传资产”步骤注入（workbuddy M3）
     steps:
       - uses: actions/checkout@v4
 
@@ -73,8 +73,11 @@ jobs:
         if: matrix.platform == 'linux'
         run: npx electron-builder --linux deb --publish never
 
-      # 转换组件 zip + sha256（全平台生成；deb 分支仅 Linux 执行，脚本内置 platform 判断）
+      # 转换组件 zip + sha256（仅 Linux job 生成）
+      # 三平台都跑会各自产出同名 zip，zip 字节可能不同 → 发布资产的 zip 与 .sha256
+      # 可能来自不同 job，导致用户安装组件时 sha256 校验必失败（workbuddy H1）
       - name: Pack converters component
+        if: matrix.platform == 'linux'
         run: node build/pack-converters.cjs
 
       # 清理 electron-builder 调试文件与 Linux 无关元数据（AppImage 用，本项目 deb 走自研升级）
@@ -88,6 +91,8 @@ jobs:
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           overwrite_files: true
           files: |

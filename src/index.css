@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- Layout tokens ---------- */
+:root {
+  /* 顶栏高度（Header 的 py-3 + h-8 = 56px）；沉浸侧栏/热区靠它对齐，避免写死 top-14（workbuddy L4） */
+  --header-h: 3.5rem;
+}
+
 /* ---------- Base resets ---------- */
 html {
   -webkit-text-size-adjust: 100%;
@@ -130,3 +136,55 @@ body {
 .md-body tbody tr:nth-child(even) td { background: #FAFAFA; }
 .md-body img { max-width: 100%; border-radius: 6px; }
 .md-body hr { border: none; border-top: 1px solid #E5E7EB; margin: 1.5em 0; }
+
+/* ========================= 平台风格适配（v0.7.0+） =========================
+ * html 根 class：platform-darwin / platform-win32 / platform-linux（main.jsx 挂载）
+ * 分流原则：字体栈三平台各自原生；macOS 隐藏标题栏（hiddenInset）后由 .app-header
+ * 提供红绿灯按钮留白与拖动区；Windows/Linux 保留系统标题栏，仅字体/细节微调。
+ */
+
+/* ---- 字体栈：跟随各平台原生 UI 字体 ---- */
+html.platform-darwin body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+html.platform-win32 body {
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+}
+html.platform-linux body {
+  font-family: 'Cantarell', 'Ubuntu', 'Noto Sans', 'Noto Sans CJK SC', system-ui, sans-serif;
+}
+
+/* ---- macOS：标题栏并入界面（titleBarStyle: hiddenInset）----
+ * .app-header = 顶栏：整条可拖动窗口 + 左侧给红绿灯按钮留白（约 78px）
+ * 其中 .no-drag 的子元素（按钮等）恢复交互
+ */
+html.platform-darwin .app-header {
+  -webkit-app-region: drag;
+  padding-left: 78px;
+}
+html.platform-darwin .app-header .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ---- macOS：毛玻璃窗口底色（vibrancy under-window，主进程启用）----
+ * 根容器与顶栏半透明以透出质感；侧栏与文档预览区保持不透明保证可读性
+ */
+html.platform-darwin .app-root,
+html.platform-darwin .app-header {
+  background-color: rgba(248, 250, 251, 0.86); /* ink-50 半透明 */
+}
+/* 侧栏必须是**不透明**的：vibrancy 模糊的是窗口背后的桌面，不是同窗口内的文档，
+ * 半透明会让下面的文档文字透上来形成重影（workbuddy L3） */
+html.platform-darwin .app-header {
+  background-color: rgba(255, 255, 255, 0.86); /* white 半透明 */
+}
+
+/* ---- 沉浸式侧栏（v0.7.0+）：预览文件时自动收起，左缘热区滑出 ---- */
+.immersion-hotzone {
+  /* 左缘 8px 透明热区：用于鼠标进入检测。
+   * 注意：它会吃掉预览区最左 8px 的点击（PDF 左缘选词会略有不便），
+   * 这是“移入即滑出”交互的必要代价（workbuddy L2 已确认保留行为） */
+  pointer-events: auto;
+  cursor: default;
+}

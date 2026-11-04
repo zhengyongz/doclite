@@ -20,7 +20,7 @@ AIGC:
 | 格式 | 渲染方式 | 缩放 |
 |------|---------|------|
 | Word (.docx) | docx-preview 渲染为 HTML | 50%–200% |
-| Excel (.xlsx) | SheetJS 解析为表格，支持多 Sheet 切换 | 50%–200% |
+| Excel (.xlsx/.xls) | SheetJS 解析为表格（含 BIFF8 旧格式），支持多 Sheet 切换 | 50%–200% |
 | PPT (.pptx) | JSZip 解析 XML，提取形状位置/背景色/图片，绝对定位渲染 | 50%–200% |
 | PDF (.pdf) | pdfjs-dist 逐页渲染为 Canvas | 50%–200% |
 | MOBI/AZW3 (.mobi/.azw3) | foliate-js 渲染 | 50%–200% |
@@ -75,7 +75,7 @@ doclite
 sudo dpkg -r doclite
 ```
 
-文件关联：安装后双击 .pdf/.docx/.xlsx/.pptx/.mobi/.azw3/.md/.markdown 文件即可用 DocLite 打开。
+文件关联：安装后双击 .pdf/.docx/.xlsx/.xls/.pptx/.mobi/.azw3/.md/.markdown 文件即可用 DocLite 打开。
 
 ### Windows (NSIS)
 
@@ -91,6 +91,12 @@ sudo dpkg -r doclite
 打开 dmg，将 DocLite 拖入「应用程序」文件夹即可。
 
 **首次打开**：由于本应用未做 Apple 开发者签名（省去 $99/年账号成本），macOS Gatekeeper 会拦截"直接双击打开"。请**右键点击应用 → 「打开」→ 再点「打开」**确认一次（或到「系统设置 → 隐私与安全性」点「仍要打开」）。这是一切未签名应用的通行做法，仅首次需要。
+
+> 若提示「"DocLite"已损坏，无法打开」（通常出现在从浏览器下载、带 quarantine 属性的包上），可执行一次：
+> ```bash
+> xattr -cr /Applications/DocLite.app
+> ```
+> 再右键打开。构建时已做 ad-hoc 重签（把"已损坏"降级为"无法验证开发者"），此命令用于清除下载隔离标记。
 
 > macOS 版更新：应用内点击"下载更新"会打开 Release 页面，请手动下载新版 dmg 覆盖安装（无 Apple 签名时自动更新会被 Gatekeeper 阻止；待后续完成签名后开放）。
 

@@ -1,7 +1,7 @@
 export default function Header() {
   return (
-    <header className="flex items-center gap-2 px-4 py-3 bg-white border-b border-ink-200 select-none lg:px-6">
-      {/* Logo / icon */}
+    <header className="app-header flex items-center gap-2 px-4 py-3 bg-white border-b border-ink-200 select-none lg:px-6">
+      {/* Logo / icon（无交互，macOS 下随整条 header 成为拖动区的一部分） */}
       <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent-500 text-white text-sm font-bold">
         Ld
       </div>

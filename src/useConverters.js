@@ -1,7 +1,7 @@
 // src/useConverters.js
 // 转换组件状态管理：检测（安装/版本/来源）、应用内安装、卸载、懒加载组件 API
 import { useCallback, useEffect, useState } from 'react'
-import { loadConvertersApi } from './utils/convertersLoader'
+import { loadConvertersApi, resetConvertersApi } from './utils/convertersLoader'
 
 export function useConverters() {
   const [status, setStatus] = useState(null) // null=检测中；{ installed, version, source }
@@ -49,6 +49,9 @@ export function useConverters() {
         setError((r && r.error) || '安装失败')
       } else {
         setNotice(`转换组件 v${r.version || ''} 安装成功`)
+        // 先重置已注入的旧组件（否则 convert() 仍用旧 bundle），再刷状态触发重新加载
+        resetConvertersApi()
+        setApi(null)
         await refresh() // status 变化触发 API 预载
       }
     } finally {
@@ -66,6 +69,8 @@ export function useConverters() {
       if (!r || !r.ok) setError((r && r.error) || '卸载失败')
       else {
         setNotice('转换组件已移除（浏览功能不受影响）')
+        resetConvertersApi()
+        setApi(null)
         await refresh()
       }
     } finally {

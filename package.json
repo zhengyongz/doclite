@@ -1,7 +1,7 @@
 {
   "name": "doclite",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "轻快文档工具箱 - Word/Excel/PPT/PDF 本地预览与格式转换",
   "author": "doclite",
   "main": "electron/main.cjs",
@@ -109,6 +109,13 @@
         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       },
       {
+        "ext": "xls",
+        "name": "Excel 表格（旧版）",
+        "description": "Excel 97-2003 表格",
+        "role": "Viewer",
+        "mimeType": "application/vnd.ms-excel"
+      },
+      {
         "ext": "pptx",
         "name": "PPT 幻灯片",
         "description": "PowerPoint 幻灯片",
@@ -124,8 +131,20 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",

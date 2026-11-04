@@ -3,6 +3,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('doclite', {
+  // 平台标识（渲染层 UI 分流：darwin/win32/linux 的字体与控件风格）
+  platform: process.platform,
+
   // 拉取启动参数中待打开的文件（返回 { name, size, data: ArrayBuffer } 或 null）
   getOpenFile: () => ipcRenderer.invoke('doclite:get-open-file'),
   // 主进程推送"又有新文件要打开"（单实例二次启动场景）

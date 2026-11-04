@@ -66,7 +66,7 @@ export default function ConvertPanel() {
   // Determine available conversions based on file format
   const conversions = []
 
-  if (ext === '.docx' || ext === '.xlsx' || ext === '.pptx') {
+  if (ext === '.docx' || ext === '.xlsx' || ext === '.xls' || ext === '.pptx') {
     conversions.push({
       key: 'to-pdf',
       label: '导出为 PDF',
@@ -103,6 +103,10 @@ export default function ConvertPanel() {
   }
 
   if (conversions.length === 0) return null
+
+  // .xls 为 v0.7.0 新增能力：旧版组件（<0.7.0）的 convertFile 只认 .xlsx，
+  // 直接放行会出现“能看到按钮但点了必报错”，故按版本门槛禁用（workbuddy M2）
+  const xlsNeedsUpdate = !!outdated && ext === '.xls'
 
   const handleConvert = async (key) => {
     if (isConverting) return
@@ -174,9 +178,20 @@ export default function ConvertPanel() {
         </div>
       )}
       {outdated && (
-        <p className="mb-2 text-[11px] text-amber-600">
-          组件版本落后于应用，建议点击上方「更新到 v{appVersion}」。
-        </p>
+        <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+          <p className="flex-1 text-[11px] leading-relaxed text-amber-700">
+            {xlsNeedsUpdate
+              ? '当前组件不支持 .xls 转换，请先更新组件。'
+              : `组件版本落后于应用（v${status.version} → v${appVersion}），建议更新。`}
+          </p>
+          <button
+            disabled={busy}
+            onClick={install}
+            className="shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? '更新中…' : `更新到 v${appVersion}`}
+          </button>
+        </div>
       )}
       {notice && (
         <p className="mb-2 text-[11px] text-green-600 break-all">{notice}</p>
@@ -198,12 +213,13 @@ export default function ConvertPanel() {
       <div className="flex flex-col gap-2">
         {status?.installed && conversions.map(({ key, label, description, icon: Icon, color }) => {
           const isThisConverting = isConverting
+          const blocked = xlsNeedsUpdate && key === 'to-pdf'
           return (
             <button
               key={key}
               onClick={() => handleConvert(key)}
-              disabled={isConverting || !api}
-              title={!api ? '转换组件加载中…' : undefined}
+              disabled={isConverting || !api || blocked}
+              title={blocked ? '当前组件不支持 .xls，请先更新组件' : (!api ? '转换组件加载中…' : undefined)}
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-ink-200 bg-white hover:border-accent-300 hover:bg-accent-50/40 transition-colors focus-ring group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isThisConverting ? (

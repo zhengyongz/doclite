@@ -1,9 +1,10 @@
 // ---------- Supported formats ----------
-export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.pptx', '.pdf', '.azw3', '.mobi', '.md', '.markdown']
+export const SUPPORTED_EXTENSIONS = ['.docx', '.xlsx', '.xls', '.pptx', '.pdf', '.azw3', '.mobi', '.md', '.markdown']
 
 export const MIME_MAP = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.ms-excel': '.xls',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
   'application/pdf': '.pdf',
   'application/x-mobipocket-ebook': '.azw3',
@@ -19,11 +20,12 @@ export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 export const FORMAT_META = {
   '.docx': { label: 'Word', color: 'bg-blue-100 text-blue-700' },
   '.xlsx': { label: 'Excel', color: 'bg-green-100 text-green-700' },
+  '.xls':  { label: 'Excel', color: 'bg-emerald-100 text-emerald-700' },
   '.pptx': { label: 'PPT',   color: 'bg-orange-100 text-orange-700' },
   '.pdf':  { label: 'PDF',   color: 'bg-red-100 text-red-700' },
   '.azw3': { label: 'AZW3',  color: 'bg-purple-100 text-purple-700' },
   '.mobi': { label: 'MOBI',  color: 'bg-amber-100 text-amber-700' },
-  '.md':   { label: 'MD',     color: 'bg-teal-100 text-teal-700' },
+  '.md':   { label: 'MD',    color: 'bg-teal-100 text-teal-700' },
   '.markdown': { label: 'MD',  color: 'bg-teal-100 text-teal-700' },
 }
 

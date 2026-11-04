@@ -10,7 +10,7 @@ export async function loadConvertersApi() {
   const status = await window.doclite?.getConvertersStatus?.()
   if (!status || !status.installed) return null
   if (!scriptPromise) {
-    scriptPromise = injectScript(status.scriptUrl)
+    scriptPromise = injectScript(status.scriptUrl, status.version)
       .then(() => {
         if (!window.DocLiteConverters) {
           throw new Error('转换组件脚本无法加载（缺少全局导出）')
@@ -25,10 +25,26 @@ export async function loadConvertersApi() {
   return scriptPromise
 }
 
-function injectScript(url) {
+// ---------- 重置已加载组件（安装/卸载成功后必须调用） ----------
+// 组件是 IIFE，注入后挂在 window.DocLiteConverters 上；不重置会导致：
+// 用户更新组件后界面显示新版本号，但 convert() 仍跑旧 bundle（如 .xls 一直报“不支持”），
+// 直到重启应用才恢复（workbuddy M1）。
+export function resetConvertersApi() {
+  try {
+    delete window.DocLiteConverters
+  } catch {
+    window.DocLiteConverters = undefined
+  }
+  scriptPromise = null
+  document.querySelectorAll('script[data-doclite-converters]').forEach((s) => s.remove())
+}
+
+function injectScript(url, version) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script')
-    s.src = url
+    // 拼版本号破缓存：同路径覆盖安装后，浏览器可能仍用旧脚本缓存
+    s.src = version ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : url
+    s.dataset.docliteConverters = '1'
     s.onload = () => resolve()
     s.onerror = () => reject(new Error('转换组件脚本加载失败'))
     document.head.appendChild(s)

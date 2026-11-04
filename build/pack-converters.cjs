@@ -41,7 +41,7 @@ const files = {
   'converters.js': [new Uint8Array(scriptBuf), { mtime: FIXED_MTIME }],
   'manifest.json': [new Uint8Array(Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8')), { mtime: FIXED_MTIME }],
 }
-const zipBuf = Buffer.from(zipSync(files, { level: 9 }))
+const zipBuf = Buffer.from(zipSync(files, { level: 9, mtime: FIXED_MTIME }))
 const zipName = `DocLite-converters-${VERSION}.zip`
 const zipPath = path.join(OUT, zipName)
 fs.mkdirSync(OUT, { recursive: true })

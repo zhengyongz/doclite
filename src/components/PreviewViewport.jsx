@@ -18,6 +18,7 @@ export default function PreviewViewport() {
   const renderContent = () => {
     switch (ext) {
       case '.xlsx':
+      case '.xls':
         return <XlsxRenderer />
       case '.docx':
         return <DocxRenderer />

@@ -1153,7 +1153,7 @@ export async function convertFile(file, ext, targetFormat, onProgress = null, op
     const hq = !!(opts && opts.highQuality)
     if (ext === '.docx') {
       await docxToPdf(file, outName, onProgress, hq)
-    } else if (ext === '.xlsx') {
+    } else if (ext === '.xlsx' || ext === '.xls') {
       await xlsxToPdf(file, outName, onProgress, hq)
     } else if (ext === '.pptx') {
       await pptxToPdf(file, outName, onProgress, hq)

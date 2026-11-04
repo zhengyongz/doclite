@@ -446,3 +446,49 @@ eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
 - 下次发布建议对本轮改动补一次 workbuddy 审查
 
 > AI生成
+
+## v0.7.0 .xls 老格式支持 + 沉浸式预览 + 平台风格适配（2026-11-04）
+
+三项用户需求（方案经确认：.doc/.ppt 不做——纯 JS 无渲染库；平台风格取稳妥版；无侧栏固定开关）。
+
+### 1. .xls（Excel 97-2003）完整支持
+
+- 白名单链路 7 处：fileHelpers（SUPPORTED/FORMAT_META/MIME_MAP）、main.cjs 两处、UploadZone、PreviewViewport case、ConvertPanel 转换入口、converters.js to-pdf 分发（`ext === '.xlsx' || ext === '.xls'`）、package.json fileAssociations
+- 原理：XlsxRenderer 与转换组件同用 SheetJS `XLSX.read()`，其原生识别 BIFF2/5/8 → 预览/转 PDF 双链路零适配成本
+- 验证：生成 BIFF8 中文双 sheet 测试文件（aoa_to_sheet bookType:'biff8'）→ 预览渲染（中文/数字/日期/双 sheet 标签）与 to-pdf 转换（CONVERT_OK）均实测通过
+
+### 2. 沉浸式预览（侧栏自动隐藏）
+
+- 交互：打开文件 → 侧栏自动收起、预览区全宽；鼠标移到屏幕左缘（8px 热区）→ 工具栏浮层滑出（fixed z-40 + 阴影，不挤压文档）；鼠标移开 300ms 防抖收起；空态恢复常驻
+- 实现（App.jsx）：`immersive = !!currentFile`；浮层态侧栏容器切 fixed + translate 动画（300ms ease-out，will-change-transform）；热区 z-30 低于侧栏（展开时被覆盖，mouseEnter 直接 setSidebarOpen）；scheduleHide/cancelHide 用 ref 计时器
+- 冒烟钩子增强（main.cjs DOCLITE_SMOKE 块，dev-only）：新增 INTERACT/DARWIN 模式——sendInputEvent 分步模拟鼠标路径（热区→侧栏内→文档区）+ executeJavaScript 实测 computed transform
+- ⚠️ 测试方法论记录：sendInputEvent 瞬移不触发中间元素的 enter/leave（Chromium hover 由鼠标事件驱动 hit-test），首测"直接瞬移到文档区"测得侧栏不收起——是测试假象非功能 bug；分步路径复测后 transform=-336px 收起正常。真实用户鼠标路径天然连续，无此问题。
+
+### 3. 平台风格适配（稳妥版）
+
+- macOS：`titleBarStyle: 'hiddenInset'`（标题栏并入界面保留红绿灯）+ `vibrancy: 'under-window'` 毛玻璃 + backgroundColor 透明（main.cjs darwin 分支）；CSS（index.css 平台段）：header 拖动区（-webkit-app-region: drag）+ 红绿灯 78px 留白 + 根容器/顶栏半透明（ink-50/86%）透出毛玻璃、文档区保持白底（侧栏保持不透明，避免文档文字透出重影）
+- Windows：Segoe UI/微软雅黑字体栈；Linux：Cantarell/Ubuntu 字体栈；两平台保留系统标题栏
+- 平台类挂载：preload 暴露 `platform: process.platform` → main.jsx 给 html 挂 platform-darwin/win32/linux；渲染层读不到时兜底 'linux'
+- 验证：Linux 本机 platform-linux 生效 + 手动切 platform-darwin 类模拟截图（布局无崩溃、留白生效）；毛玻璃/红绿灯真实效果需 macOS 真机验收（CI 构建后用户实测）
+
+### 4. workbuddy 审查修复（发布前，2026-11-04）
+
+审查报告：`~/文档/Obsidian Vault/检查doclite-v0.6.0补审与v0.7.0.md`（范围 A：v0.6.0 macOS/CI 补审；范围 B：v0.7.0 工作区改动）
+
+- **H1 组件 zip 三平台重复上传**：release.yml 的 Pack converters 步骤加 `if: matrix.platform == 'linux'`（原先三平台各自产出同名 zip，字节可能不同 → 资产的 zip 与 .sha256 可能来自不同 job，用户安装必报 sha256 不匹配）；pack-converters.cjs 显式 `zipSync(files, { level: 9, mtime: FIXED_MTIME })`，本地连打两次 sha256 一致（a06533f0…）
+- **H2 macOS 未签名**：afterPack.cjs 新增 darwin 分支——先裁 `*.lproj`（Electron Framework Resources，55 个约 57M，保留 en/zh_CN/zh_TW），再 `codesign --force --deep --sign -` ad-hoc 重签；解决 CI 无证书时 electron-builder 直接跳过签名、下载后首启被判“已损坏”的问题（未公证仍需右键打开/xattr）；README 补 `xattr -cr` 排障说明
+- **M1 组件热更新不生效**：convertersLoader 新增 `resetConvertersApi()`（删全局、清 scriptPromise、移除注入 script），注入时加 `data-doclite-converters` 标记 + `?v=版本` 破缓存；useConverters 在 install/uninstall 成功后先重置再 refresh（此前界面显示新版本但 convert 仍跑旧 bundle）
+- **M2 .xls 版本门槛**：ConvertPanel 对 `outdated && ext==='.xls'` 禁用导出按钮并提示“当前组件不支持 .xls”，落后横幅改为带一键“更新到 vX”按钮（旧组件 convertFile 只认 .xlsx）
+- **M3 CI 权限收敛**：release.yml 去掉 job 级 GH_TOKEN，仅“Upload release assets”步骤注入（npm ci/electron-builder 不再全程持有可写 token）
+- **M5 销毁窗口误发消息**：notifyRenderer 加 `mainWindow.isDestroyed()` 判断；createWindow 补 `closed` 监听置空 mainWindow（macOS 关窗不退出后，Finder 双击文件会打向已销毁 webContents）
+- **低优顺手**：侧栏收起时 `aria-hidden` + `inert`（L1）；热区注释改为如实说明会吃掉左缘 8px 点击（L2）；侧栏改不透明（L3）；`top-14` 改 `top-[var(--header-h)]`（L4）；ci.yml 删除无用 GH_TOKEN（L7）
+- **验证**：npm run build 通过；冒烟实测 .xls 双 sheet 预览正常、沉浸侧栏收起 transform=-336px、平台类模拟截图正常；两个 workflow YAML 解析通过
+- **留待下轮**：M4（macOS 更新弹窗文案/交互）、M6（哈希期望值走镜像的信任根）、L5（xlsx CVE，评估 SheetJS 官方 CDN）、L6（action pin commit SHA）
+
+### 遗留
+
+- .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）
+- macOS hiddenInset+vibrancy 效果待真机验证
+- H2 的 ad-hoc 重签与 .lproj 裁剪需 macOS CI/真机验证（本机 Linux 无法运行 .app）
+
+> AI生成
