@@ -511,6 +511,35 @@ eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
 - **验证**：npm run build 通过；Electron 冒烟 .xls 预览 + 沉浸侧栏收起 -336px 无回归
 - **遗留**：M3 的 MdRenderer notices / Azw 章节失败占位文案（瞬态）不随切语言重算，下轮改存 key；导出物（PDF/Word/MOBI）内嵌文案仍是中文（L2，成本高，记为已知限制）
 
+### 7. 用户反馈三项修复（2026-11-05，待 workbuddy 审查）
+
+来源：`~/文档/Obsidian Vault/doclite项目中的问题_20261105.md`
+
+1. **AZW3/MOBI 每章出现英文副标题**（如“HOW AN ECONOMY / GROWS AND / WHY IT CRASHES”）
+   - 根因：章节标题（第X章，h3）后常先有一行中文章名，其后再跟多行大写英文副标题；原副标题收集器在“h3 → 中文标题行”后就被打断，导致英文副标题漏进正文
+   - 修复（converters.js pdfToAzw3）：新增 `looksLikeTitleLine`，标题后的中文短标题行正常输出但**保持副标题收集状态**，其后连续英文大写行仍被整组丢弃；`subtitleActive` 标记统一管理收集/丢弃
+   - 验证：判定函数样例命中；构建 + Electron 冒烟通过。问题 1 属**单元样例验证**，无源 PDF，端到端待样本/真机复核（workbuddy L8 已修正措辞）
+2. **沉浸热区改为窗口左边 20%**
+   - 原为固定 8px（w-2）；按用户要求改为 `w-[20%]`（App.jsx），鼠标移到界面左边 20% 即滑出
+   - 注意：热区覆盖区域内的鼠标点击会被占用（PDF 左缘选词等），为交互代价，已在注释说明
+3. **macOS 升级弹窗**（原点击“下载更新”后报错“macOS 暂不支持自动更新…”，红底 error + 关闭/重试）
+   - 修复（UpdateDialog）：`info.manualDownload` 时“有新版本”面板改为「前往下载」按钮（openExternal 打 Release 页），不再触发下载/报错；error 态若为 macOS 手动更新消息，改显「手动更新」引导 + 关闭/前往下载，不再给“重试”
+   - i18n 补 `update.macManualTitle/Hint/goDownload` 中英键
+
+### 8. 三项问题修复·workbuddy 审查修复（0.8.1 发布前，2026-11-05）
+
+审查报告：`~/文档/Obsidian Vault/检查doclite-三项问题修复.md`。按结论修复：
+
+- **H1 热区改窗口级 mousemove**：删除固定定位蒙层（蒙层与预览滚动容器是兄弟节点，左 20% 区域的点击/滚轮/触摸滚动全部失效且光标变箭头）；App.jsx 改为 `mousemove` 判定 `clientX <= innerWidth * 0.2`，`sidebarOpenRef` 镜像状态避免高频 setState；同步删除 `.immersion-hotzone` 样式
+- **H2+M1 副标题过滤改“标题后有限窗口”**：`postHeading = 3`（按已输出行计数：窗口内大写英文行=副标题整组丢弃且不占窗口；普通行输出并消耗一格；窗口耗尽后大写英文按正文处理），误删范围限定在标题后 3 行内；`looksLikeTitleLine` 放宽为只挡句读「。！？；」（允许 ：、，）、长度 1..60（H2 的 B/C/D 复现样例全部转通过）
+- **M2**：窗口内中文短标题/章名行独立成段（flushPara 包裹），不再与正文首句拼段
+- **样例实测新发现并修复**：`stripEnglishSubtitleTail` 此前会把纯英文副标题行截成残词（"HOW AN ECONOMY"→"HOW"、"WHY IT CRASHES"→"WHY"）漏进正文；现限定仅对**含中文**的行做尾部剔除
+- **M3**：`openDialog` 在 error 态也自动重新检查——macOS 手动更新引导后，侧栏「检查更新」不再只是重开旧面板
+- **M4**：主进程不再往 `releaseNotes` 尾部拼中文手动更新说明（英文界面会混入整段中文），只下发 `manualDownload` 标记，文案由渲染层 i18n 组装
+- **低优**：L1 `releasePageUrl` 由主进程统一下发（渲染层删掉第二份硬编码仓库地址）；L2 「前往下载」点完关弹窗；L3 `isMacManual` 判定收窄（`=== true` 或固定前缀正则）；L7 单字标题（如「序」）可命中；L8 第 7 节验证措辞修正
+- **验证**：8 组状态机样例（含审查 B/C/D/E 复现样例与同物理行尾巴剔除）全部通过；`npm run build` 通过；Electron 冒烟 `.xls` 预览 + 侧栏滑出/收起（-336px）正常
+- **已知限制（预存在）**：副标题过滤窗口不跨页（标题在页尾、副标题在次页顶部会漏）；英文副标题含冒号/Title Case 不识别（维持现状防误删正文）
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）

@@ -79,8 +79,9 @@ export function useUpdater() {
 
   const openDialog = useCallback(() => {
     setOpen(true)
-    // 首次打开且还没检查过才自动触发检查
-    if (phase === 'idle') check()
+    // idle（从未检查过）或 error（上次失败 / macOS 手动更新引导后）都自动重新检查，
+    // 避免侧栏「检查更新」一直只是重开旧面板（workbuddy M3）
+    if (phase === 'idle' || phase === 'error') check()
   }, [phase, check])
 
   const copyInstallCmd = useCallback(() => {

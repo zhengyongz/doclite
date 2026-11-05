@@ -29,6 +29,17 @@ export default function UpdateDialog({ updater }) {
 
   const installCmd = filePath ? `sudo dpkg -i "${filePath}"` : ''
   const showReadyUi = phase === 'ready' || phase === 'installing' || phase === 'installed'
+  // macOS（一期）不支持自动更新：主进程已在检查时标记 manualDownload；下载入口被拦截并抛
+  // “macOS 暂不支持自动更新”错误。两种情况都应当给“前往下载”引导，而不是报错/重试。
+  // 判定收窄（workbuddy L3）：标记精确等于 true，或错误消息以固定前缀开头，避免误伤普通网络错误
+  const isMacManual = info?.manualDownload === true
+    || /^macOS\s*暂不支持自动更新/.test(errorMsg || '')
+  // 前往下载：用主进程下发的 releasePageUrl（单一来源，workbuddy L1）；点完顺手关弹窗（L2）
+  const openRelease = () => {
+    setOpen(false)
+    const url = info?.releasePageUrl
+    if (url) window.doclite?.openExternal?.(url)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" onClick={() => setOpen(false)}>
@@ -56,7 +67,21 @@ export default function UpdateDialog({ updater }) {
             </div>
           )}
 
-          {phase === 'error' && (
+          {/* macOS 手动更新引导：不报错、不重试，直接给“前往下载” */}
+          {phase === 'error' && isMacManual && (
+            <div className="py-4">
+              <p className="text-sm font-medium text-ink-800">{t('update.macManualTitle')}</p>
+              <p className="text-xs text-ink-500 mt-1.5 leading-relaxed">{t('update.macManualHint')}</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>{t('update.close')}</button>
+                <button className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600" onClick={openRelease}>
+                  {t('update.goDownload')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {phase === 'error' && !isMacManual && (
             <div className="py-4">
               <p className="text-sm text-ink-700">{ts(errorMsg) || t('update.error')}</p>
               <p className="text-xs text-ink-400 mt-1.5">{t('update.errorHint')}</p>
@@ -85,7 +110,7 @@ export default function UpdateDialog({ updater }) {
                 <span className="text-xs text-ink-400">{t('update.current', { version: info.currentVersion })}</span>
                 {info.publishedAt && <span className="text-xs text-ink-400 ml-auto">{fmtDate(info.publishedAt)}</span>}
               </div>
-              {info.asset && (
+              {info.asset && !isMacManual && (
                 <p className="mt-2 text-xs text-ink-500">{t('update.package', { name: info.asset.name, size: fmtMB(info.asset.size) })}</p>
               )}
               {info.releaseNotes && (
@@ -95,9 +120,15 @@ export default function UpdateDialog({ updater }) {
               )}
               <div className="mt-4 flex justify-end gap-2">
                 <button className="px-3 py-1.5 rounded-lg border border-ink-300 text-xs" onClick={() => setOpen(false)}>{t('update.later')}</button>
-                <button className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600" onClick={download}>
-                  {t('update.download')}
-                </button>
+                {isMacManual ? (
+                  <button className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600" onClick={openRelease}>
+                    {t('update.goDownload')}
+                  </button>
+                ) : (
+                  <button className="px-3 py-1.5 rounded-lg bg-accent-500 text-white text-xs font-medium hover:bg-accent-600" onClick={download}>
+                    {t('update.download')}
+                  </button>
+                )}
               </div>
             </div>
           )}

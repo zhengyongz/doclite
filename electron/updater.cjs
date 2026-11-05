@@ -152,7 +152,8 @@ async function check({ force = false } = {}) {
   }
 
   const currentVersion = app.getVersion()
-  const result = { ok: false, currentVersion, error: null, hasUpdate: false }
+  // releasePageUrl 统一由主进程下发（workbuddy L1：渲染层不再硬编码第二份仓库地址）
+  const result = { ok: false, currentVersion, error: null, hasUpdate: false, releasePageUrl: RELEASE_PAGE_URL }
 
   try {
     const body = await requestUrl(API_URL, {
@@ -190,17 +191,10 @@ async function check({ force = false } = {}) {
         }
       : null
 
-    // v0.6.0+ macOS：手动更新引导（一期不做自动更新）——在更新说明尾部追加下载指引，
-    // 用户在更新弹窗内即可看到 Release 链接与架构选择说明（主进程侧完成，不改渲染层）
+    // v0.6.0+ macOS：一期不做自动更新（无 Developer ID 签名，zip 替换必被 Gatekeeper 阻止）。
+    // 只下发 manualDownload 标记：弹窗的手动更新文案/「前往下载」按钮由渲染层按 i18n 组装
+    // （workbuddy M4：不再往 releaseNotes 尾部拼中文说明，避免英文界面混入整段中文）
     if (process.platform === 'darwin' && result.hasUpdate) {
-      const manualNote = [
-        '',
-        '---',
-        '【macOS 更新说明】当前版本暂不支持自动更新，请手动下载安装：',
-        RELEASE_PAGE_URL,
-        'Apple Silicon（M 系列芯片）下载 -arm64.dmg；Intel 机型下载 -x64.dmg。',
-      ].join('\n')
-      result.releaseNotes = (result.releaseNotes || '') + manualNote
       result.manualDownload = true
     }
 

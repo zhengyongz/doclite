@@ -828,6 +828,21 @@ function looksLikeEnglishSubtitle(s) {
 }
 
 /**
+ * 判断是否为“章节标题后的中文副标题/标题行”。
+ * 用于：第X章（h3）之后可能先有一行中文章名，其后才跟着多行英文副标题；
+ * 该中文行要正常输出，但不能因此打断“英文副标题收集”状态（否则英文副标题会漏到正文）。
+ * 判定：含中文、无中英文句读标点、长度 2..40。
+ */
+function looksLikeTitleLine(s) {
+  // 只挡句读（。！？；）：「：、，」常出现在章名/副标题里（如“不断缩水的鱼：货币的隐喻”），
+  // 不应因此漏判（workbuddy H2）；长度放宽到 1..60（L7：单字标题如「序」也命中）。
+  // 该判定只影响“是否独立成段”，副标题丢弃由“标题后窗口”保证，与标点无关。
+  if (!s || s.length < 1 || s.length > 60) return false
+  if (/[。！？；]/.test(s)) return false
+  return /[\u4e00-\u9fff]/.test(s)
+}
+
+/**
  * PDF → AZW3 (.mobi)
  * 用 pdfjs 提取每页文本和图片，按位置排列，转成 XHTML，
  * 用 mobiWriter 生成 MOBI6 格式电子书（含图片资源与章节目录）。
@@ -901,25 +916,24 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
     // 说明原文该处是独立短句，保留换行语义（用 <br/> 连接）。
     let html = ''
     let para = [] // 当前段落收集的行
-    let subtitleLines = null // 章节标题后连续英文副标题行的收集器
+    // 标题后的“英文副标题过滤窗口”（workbuddy H2/M1）：
+    //  - 窗口内的大写英文行＝章节英文副标题，直接丢弃（不消耗窗口）；
+    //  - 窗口内其他行正常输出并消耗一格；窗口耗尽后，大写英文行按正文处理（防误删正文）；
+    //  - 3 格足够覆盖“中文章名 1-2 行 + 英文副标题 2-4 行”的真实版式，
+    //    且把误删范围限定在标题后 3 行内（旧“无限 flag”会把状态带进正文）。
+    let postHeading = 0
     const flushPara = () => {
       if (para.length > 0) {
         html += `<p>${para.map(t => escapeXml(t)).join(' ')}</p>\n`
         para = []
       }
     }
-    const flushSubtitle = () => {
-      if (subtitleLines && subtitleLines.length > 0) {
-        // 章节标题后的英文副标题：直接丢弃，不输出任何 HTML。
-        // 原因：display:none 只对 Web 内核生效，文石阅读器会扫描纯文本流，
-        // 把大写英文行误识别为章节名显示在目录/页眉（实测复现）。
-        // 彻底移除这些行，避免任何设备把副标题当章节节点。
-        subtitleLines = null
-      }
-    }
     /** 从行内剔除尾部英文大写副标题（如"中岛帝国：远方的生命线 HOW AN ECONOMY..."），
-     * 返回剔后剩余文本；若整行都是副标题返回空串 */
+     * 返回剔后剩余文本；若整行都是副标题返回空串。
+     * 仅作用于含中文的行：纯英文行（如"HOW AN ECONOMY"）必须原样交给整行副标题判定，
+     * 否则会被截成残词"HOW"漏进正文（workbuddy 样例实测复现） */
     const stripEnglishSubtitleTail = (s) => {
+      if (!/[\u4e00-\u9fff]/.test(s)) return s
       // 匹配：行尾的大写英文短语（≥ 5 字符，且全大写字母/空格）
       const m = s.match(/\s+([A-Z][A-Z\s'&:]{4,})\s*$/)
       if (m && looksLikeEnglishSubtitle(m[1].trim())) return s.slice(0, m.index).trim()
@@ -936,27 +950,31 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
         if (!trimmed) continue
         if (looksLikeHeading(item)) {
           flushPara()
-          flushSubtitle()
           html += `<h3>${escapeXml(trimmed)}</h3>\n`
-          subtitleLines = [] // 开始收集可能的英文副标题
-        } else if (subtitleLines !== null && looksLikeEnglishSubtitle(trimmed)) {
-          // 标题后连续的大写英文行：并入副标题收集器（整组丢弃）
-          subtitleLines.push(trimmed)
+          postHeading = 3 // 开启英文副标题过滤窗口
+        } else if (postHeading > 0 && looksLikeEnglishSubtitle(trimmed)) {
+          // 窗口内的大写英文行＝章节英文副标题：直接丢弃，不输出任何 HTML、不消耗窗口。
+          // 原因：display:none 只对 Web 内核生效，文石阅读器会扫描纯文本流，
+          // 把大写英文行误识别为章节名显示在目录/页眉（实测复现），故彻底移除。
+        } else if (postHeading > 0 && looksLikeTitleLine(trimmed)) {
+          // 窗口内的中文短标题/章名行：独立成段输出（避免与正文首句拼进同一段，workbuddy M2），消耗一格窗口
+          flushPara()
+          para.push(trimmed)
+          flushPara()
+          postHeading--
         } else {
-          flushSubtitle()
-          subtitleLines = null
+          // 普通行：输出并消耗一格窗口（耗尽后大写英文行按正文处理，避免误删）
+          if (postHeading > 0) postHeading--
           para.push(trimmed)
         }
       } else if (item.type === 'image') {
         flushPara()
-        flushSubtitle()
-        subtitleLines = null
+        postHeading = 0 // 图片断开副标题窗口
         // 图片按页面宽度比例缩放到 100%
         html += `<p class="ebook-img"><img recindex="${item.recindex}" width="${item.width}" height="${item.height}"></p>\n`
       }
     }
     flushPara()
-    flushSubtitle()
 
     // 检测是否为目录页（包含"目录""目  录"等关键词，且文本较短）
     const pageText = textLines.map(l => l.str).join('').trim()

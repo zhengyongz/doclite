@@ -157,6 +157,9 @@ const zh = {
   'update.copy': '复制',
   'update.openInFileManager': '在文件管理器中查看',
   'update.openInstaller': '打开安装程序',
+  'update.macManualTitle': '手动更新',
+  'update.macManualHint': '本版本暂不支持自动更新，请手动下载并安装对应架构的 DMG。Apple Silicon 选 -arm64，Intel 选 -x64。',
+  'update.goDownload': '前往下载',
 
   // useConverters / useUpdater（渲染层回退文案）
   'converters.loadFailed': '转换组件加载失败：{msg}',
@@ -294,6 +297,9 @@ const en = {
   'update.copy': 'Copy',
   'update.openInFileManager': 'Show in file manager',
   'update.openInstaller': 'Open installer',
+  'update.macManualTitle': 'Manual update',
+  'update.macManualHint': 'This version does not support auto-update. Please download and install the DMG for your architecture manually (Apple Silicon: -arm64, Intel: -x64).',
+  'update.goDownload': 'Go to download',
 
   'converters.loadFailed': 'Failed to load converter component: {msg}',
   'converters.installFailed': 'Installation failed',

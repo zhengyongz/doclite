@@ -179,12 +179,3 @@ html.platform-darwin .app-header {
 html.platform-darwin .app-header {
   background-color: rgba(255, 255, 255, 0.86); /* white 半透明 */
 }
-
-/* ---- 沉浸式侧栏（v0.7.0+）：预览文件时自动收起，左缘热区滑出 ---- */
-.immersion-hotzone {
-  /* 左缘 8px 透明热区：用于鼠标进入检测。
-   * 注意：它会吃掉预览区最左 8px 的点击（PDF 左缘选词会略有不便），
-   * 这是“移入即滑出”交互的必要代价（workbuddy L2 已确认保留行为） */
-  pointer-events: auto;
-  cursor: default;
-}

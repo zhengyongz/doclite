@@ -71,6 +71,9 @@ function AppBody() {
   const immersive = !!currentFile
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const hideTimerRef = useRef(null)
+  // 镜像 sidebarOpen：mousemove 高频回调里避免每次都 setState（workbuddy H1）
+  const sidebarOpenRef = useRef(false)
+  sidebarOpenRef.current = sidebarOpen
   const cancelHide = useCallback(() => clearTimeout(hideTimerRef.current), [])
   const scheduleHide = useCallback(() => {
     clearTimeout(hideTimerRef.current)
@@ -85,6 +88,20 @@ function AppBody() {
 
   // 卸载清理
   useEffect(() => () => clearTimeout(hideTimerRef.current), [])
+
+  // 沉浸态：鼠标移到窗口左边 20% 即滑出侧栏。
+  // 用窗口级 mousemove 判定而非固定定位蒙层：蒙层会吃掉其覆盖区域内的点击/滚轮/触摸滚动
+  // （预览区是蒙层的兄弟节点，不在其祖先链上，滚动事件落到蒙层后无处可滚），且光标会变成箭头（workbuddy H1）
+  useEffect(() => {
+    if (!immersive) return
+    const onMove = (e) => {
+      if (e.clientX > window.innerWidth * 0.2) return
+      cancelHide()
+      if (!sidebarOpenRef.current) setSidebarOpen(true)
+    }
+    window.addEventListener('mousemove', onMove, { passive: true })
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [immersive, cancelHide])
 
   return (
     <div className="app-root flex flex-col h-screen overflow-hidden bg-ink-50">
@@ -111,16 +128,8 @@ function AppBody() {
           <Sidebar updater={updater} />
         </div>
 
-        {/* 沉浸模式：屏幕左缘热区（鼠标移入滑出工具栏；z 低于侧栏，展开时被覆盖） */}
-        {immersive && (
-          <div
-            className="immersion-hotzone fixed top-[var(--header-h)] bottom-0 left-0 z-30 w-2"
-            onMouseEnter={() => {
-              cancelHide()
-              setSidebarOpen(true)
-            }}
-          />
-        )}
+        {/* 沉浸模式热区：已改为窗口级 mousemove 判定（见上方 useEffect），
+            不再渲染固定定位蒙层（避免占用左 20% 的点击/滚轮/触摸滚动） */}
 
         {/* ---- Right panel (preview + convert) ---- */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden w-full lg:w-auto">
