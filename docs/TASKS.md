@@ -25,7 +25,7 @@
 
 ## ID 规则
 
-`R-xxx` 审查意见 · `B-xxx` 手动测试/用户反馈 · `T-xxx` 开发过程中的技术债 · `V-xxx` 验证缺口
+`R-xxx` 审查意见与测试发现 · `B-xxx` 手动测试/用户反馈 · `T-xxx` 开发过程中的技术债 · `V-xxx` 验证缺口
 
 ---
 
@@ -35,18 +35,18 @@
 
 | 维度 | 数量 |
 |---|---|
-| 总条目 | **127** |
-| ├ R-xxx 审查意见 | 95 |
+| 总条目 | **128** |
+| ├ R-xxx 审查意见 | 96 |
 | ├ B-xxx 用户反馈 | 20 |
 | ├ T-xxx 技术债 | 8 |
 | └ V-xxx 验证缺口 | 4 |
-| 🔴 高 | 13（+ B 段 20 项按 🔴 计） |
+| 🔴 高 | 14（+ B 段 20 项按 🔴 计） |
 | 🟡 中 | 53 |
 | ⚪ 低 | 41 |
 
 | 状态 | 数量 |
 |---|---|
-| 已修 | 72 |
+| 已修 | 73 |
 | 已知限制 | 6 |
 | **未闭环（待修 46 + 待验 3）** | **49** |
 
@@ -56,9 +56,9 @@
 
 | ID | 问题 | 备注 |
 |---|---|---|
-| B-020 | 三项问题修复后端到端仍需真机复核 | 唯一一条 🔴 未闭环 |
+| B-020 | 三项问题修复后端到端仍需真机复核 | 唯一一条 🔴 未闭环；本地端到端已闭环（L4 C 段，2026-11-07），剩真机 |
 
-### 未闭环中优先级（30 项，按主题归类）
+### 未闭环中优先级（27 项，按主题归类）
 
 | 主题 | 条目 | 数量 |
 |---|---|---|
@@ -95,6 +95,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-011 | 审查 i18n H2 | 中文界面 AZW3 章节渲染失败显示原始 key | `src/i18n.jsx:118` | 已修 | v0.8.0 | zh 字典补 `renderer.azw.sectionFailed` |
 | R-012 | 审查 v0.6.0 H1 | 组件 zip 三平台重复上传，zip 与 sha256 可能来自不同 job | `.github/workflows/release.yml` | 已修 | v0.7.0 | Pack converters 步骤加 `if: matrix.platform == 'linux'` |
 | R-013 | 审查 项目审查 #5 | Electron 安全加固不全：缺 sandbox / CSP / 窗口拦截 | `electron/main.cjs` | 已修 | v0.2.0 | 已开 `sandbox: true`、`setWindowOpenHandler`、`will-navigate`、index.html CSP |
+| R-096 | L4 端到端 2026-11-07 | 组件 bundle 内联的 pdfjs 与主应用是两个模块实例、从未配置 workerSrc → 应用内 PDF 转 Word/PNG/AZW3 全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`（组件拆分 v0.5.0 起即坏） | `src/utils/converters.js` + `vite.config.converters.js` + `build/pack-converters.cjs` | 已修 | v0.8.2 | worker 随组件 assets 发布（构建期复制 + 打包硬校验），方案见 STATE.md D-036；L4 C 段真实链路验证 |
 
 ---
 
@@ -217,7 +218,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | B-017 | 2026-11-05 | AZW3/MOBI 每章出现「HOW AN ECONOMY GROWS AND WHY IT CRASHES」 | `src/utils/converters.js` | 已修 | v0.8.1 | 副标题过滤状态机重构 |
 | B-018 | 2026-11-05 | 沉浸热区仅 8px，要求改为左 20% | `src/App.jsx` | 已修 | v0.8.1 | 最终改窗口级 mousemove（R-004） |
 | B-019 | 2026-11-05 | macOS 升级弹窗报错「macOS 暂不支持自动更新」 | `src/components/UpdateDialog.jsx` | 已修 | v0.8.1 | 改「前往下载」引导 |
-| B-020 | 2026-11-05 | 用户反馈三项修复后**端到端仍需真机复核** | 全链路 | 待验 | — | **V-002** |
+| B-020 | 2026-11-05 | 用户反馈三项修复后**端到端仍需真机复核** | 全链路 | 待验 | — | **V-002**；2026-11-07 本地端到端已闭环（L4 C 段全过，连带发现并修复 R-096），剩原始样本 PDF + 真机复核 |
 
 ---
 
@@ -241,7 +242,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | ID | 缺口 | 影响 | 状态 | 备注 |
 |---|---|---|---|---|
 | V-001 | 无自动化测试，`package.json` 无 `test` script | AI 无法自证修改正确，每轮必须人肉验证 | 已修 | v0.8.2 | 已建 `npm run smoke`（L1 静态 / L2 逻辑 / L3 组件安全 / L4 集成）+ `npm run verify`；见 `docs/smoke/README.md` |
-| V-002 | 三项问题修复仅单元样例验证，无源 PDF 端到端 | B-017 的真实闭环未确认 | 待验 | 需用户真机 |
+| V-002 | 三项问题修复仅单元样例验证，无源 PDF 端到端 | B-017 的真实闭环未确认 | 待验 | 2026-11-07 本地端到端（L4 C 段，含用户报告结构的合成样例）已通过；剩原始样本 PDF + Kindle/文石真机复核 |
 | V-003 | macOS `ad-hoc` 重签与 `.lproj` 裁剪未在 macOS CI/真机验证 | macOS 产物正确性未知 | 待验 | — |
 | V-004 | CI 不跑冒烟，只验构建 | 功能坏掉要等发版才暴露 | 已修 | v0.8.2 | ci.yml 的 linux job 加 `Smoke test (L1-L3)` 步骤 |
 

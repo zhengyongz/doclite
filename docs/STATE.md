@@ -395,6 +395,24 @@
 
 ---
 
+### D-036 · 2026-11-07 · pdfjs worker 随转换组件以文件资产发布，不用 `?url` / data:
+**决策**：转换组件的 pdfjs worker 以真实文件随组件分发——`vite.config.converters.js` 加 `copy-pdfjs-worker` 插件，构建期把 `node_modules/pdfjs-dist/build/pdf.worker.min.mjs` 复制到 `dist/converters/assets/`；`src/utils/converters.js` 在模块初始化时同步捕获 `document.currentScript` 合成组件目录，把 `GlobalWorkerOptions.workerSrc` 指向组件目录下的 `assets/pdf.worker.min.mjs`；`build/pack-converters.cjs` 把 `assets/**` 纳入 zip/deb/manifest，且 worker 缺失时硬校验中断打包（宁可打包失败也不静默发布残缺组件）。
+
+**背景**：R-096 —— 组件 bundle 内联的 pdfjs 与主应用 `PdfRenderer.jsx` 的是**两个独立模块实例**，主应用的 worker 配置对组件无效；组件侧从未配置 → 应用内 PDF 转 Word/PNG/AZW3 自组件拆分（v0.5.0）起全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`。此前单元测试只测纯函数，端到端从未跑过（V-002 缺口的实证）。
+
+**理由**：
+1. 不能用 `?url`：Vite lib（IIFE）模式会把资源内联成 data: URL，而 Chromium/CSP 拒绝以 data: 创建 Worker；data:/blob: 均不可行，worker 二进制必须以真实文件发布。
+2. 路径必须以组件自身目录为基准：组件可装在 dev 目录 / `/opt/DocLite/resources/converters` / 用户级 userData 三处（D-001），相对主包的路径不可用。
+3. `document.currentScript` 必须在模块初始化时同步捕获：经典 `<script>` 注入执行期间它才有效；重依赖走函数内动态 `import()`，届时同步段已执行完、它已为 null。
+
+**兼容边界**：安装白名单的 `assets/` 目录前缀早已预留（D-009 白名单机制不变）；旧组件（v0.8.1 及以前，无 assets）装入新应用不报错，但其内 PDF 源转换仍坏，需升级组件才能修复；新组件（v0.8.2+）装入旧应用由 `minAppVersion` 门槛拦截（R-015），属预期。
+
+**影响面**：`src/utils/converters.js`、`vite.config.converters.js`、`build/pack-converters.cjs`
+
+**关联**：R-096（已修，验证方式 L4 C 段端到端）、D-001、D-009
+
+---
+
 ## 五、流程与协作决策
 
 ### D-031 · 2026-11-06 · 项目状态以仓库文件为唯一事实源，Obsidian 降级为只读视图
@@ -464,6 +482,21 @@
 **理由**：只缓存「下载缓存目录」是安全的 —— node_modules 每次 `npm ci` 全量重装，保证 `postinstall` 的 `patch-package` 每次都执行（否则 foliate-js 补丁不生效，见 D-003）。缓存 key 带 `hashFiles('package-lock.json')`，依赖版本变化时自动失效。
 
 **关联**：T-008（已修）
+
+---
+
+### D-037 · 2026-11-07 · L4 端到端测试三条环境伪影的对策（测试方法论）
+**决策**：L4 集成测试在隐藏窗口下运行时，以下三条是 **Electron/Chromium 环境伪影而非产品 bug**，断言必须采用对应对策，避免下一代接手人把它们误判为回归：
+
+1. **CSS 过渡不推进**：隐藏窗口（`show:false`）的 compositor 不推进——实测 300ms 过渡在隐藏窗口里 1.8s 后仍停在起点（时间序列采样记于 `.smoke-report/`）。对策：进入 B 段断言前 `win.showInactive()`（显示不抢焦点）；断言用**轮询等待最终 transform 值**，不用固定 sleep。
+2. **hover hit-test 不更新**：瞬移式 `mouseMove` 不触发 DOM enter/leave（Chromium hover 由鼠标事件驱动 hit-test）。对策：依赖窗口级 `mousemove`（D-013 沉浸热区方案）的交互用 `sendInputEvent` 单步跳变即可驱动；不测纯 CSS hover。
+3. **CJK 部首变体**：Chromium `printToPDF` 合成的 PDF，部分汉字经 pdfjs 提取会得到康熙部首/部首补充区块的变体字形（⼗≠十、⽔≠水、⻥≠鱼，字形相同码位不同），连「目录」标题也会变「⽬录」导致目录页检测正则失配。对策：fixture 的目录页标题用英文 `Contents`；文本断言前做 `normCJK()` 双向归一化。
+
+**理由**：三条均经过采样/探针实测确认，产品链路本身正确；不记录的话，下一轮改测试时极易被当成回归白排查一遍。
+
+**影响面**：`scripts/smoke/integration-app.cjs`
+
+**关联**：D-013、D-033、D-034
 
 ---
 

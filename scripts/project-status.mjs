@@ -110,6 +110,15 @@ function main() {
   const decisions = existsSync(STATE) ? parseDecisions(readFileSync(STATE, 'utf8')) : []
   const pendings = existsSync(STATE) ? parsePending(readFileSync(STATE, 'utf8')) : []
 
+  // 基建检查（对齐 D-033 实际落地的四层套件；原 P1 版本检查 scripts/smoke.cjs 单文件方案已废止）
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  const checks = {
+    smokeScriptsInPkg: ['smoke', 'smoke:static', 'smoke:logic', 'smoke:unit', 'smoke:integration', 'verify', 'handoff', 'status']
+      .every((k) => !!(pkg.scripts && pkg.scripts[k])),
+    smokeRunnerInRepo: existsSync(join(ROOT, 'scripts/smoke/run.mjs')),
+    smokeSuitesInRepo: ['unit-updater.cjs', 'unit-component-zip.cjs', 'integration-app.cjs']
+      .every((f) => existsSync(join(ROOT, 'scripts/smoke', f))),
+  }
   const result = {
     total: rows.length,
     byStatus,
@@ -118,11 +127,8 @@ function main() {
     open: open.map((r) => ({ id: r.id, priority: r.priority, status: r.status, title: r.title })),
     decisions: decisions.length,
     pendingDecisions: pendings.length,
-    checks: {
-      hasTestScript: /"test"\s*:/.test(readFileSync(join(ROOT, 'package.json'), 'utf8')),
-      smokeScriptExists: existsSync(join(ROOT, 'scripts/smoke.cjs')),
-      smokeInRepo: existsSync(join(ROOT, 'scripts')) && !existsSync(join(ROOT, '.temp/smoke-install.cjs')),
-    },
+    checks,
+    infraOk: checks.smokeScriptsInPkg && checks.smokeRunnerInRepo && checks.smokeSuitesInRepo,
   }
 
   if (args.includes('--json')) {
@@ -156,17 +162,13 @@ function main() {
   console.log(`  分布      ` + Object.entries(byP).map(([k, v]) => `${k}${v}`).join('  '))
 
   console.log('')
-  console.log('基建检查')
-  console.log(`  ${result.checks.hasTestScript ? '✓' : '✗'} package.json 有 test script`)
-  console.log(`  ${result.checks.smokeScriptExists ? '✓' : '✗'} scripts/smoke.cjs 存在`)
-  console.log(`  ${result.checks.smokeInRepo ? '✓' : '✗'} 冒烟脚本已从 .temp 迁入仓库`)
+  console.log('基建检查（D-033 四层冒烟套件）')
+  console.log(`  ${checks.smokeScriptsInPkg ? '✓' : '✗'} package.json 冒烟/交接/体检 scripts 齐备（smoke/:verify/handoff/status）`)
+  console.log(`  ${checks.smokeRunnerInRepo ? '✓' : '✗'} scripts/smoke/run.mjs 统一入口存在`)
+  console.log(`  ${checks.smokeSuitesInRepo ? '✓' : '✗'} 三套测试脚本在仓库（L2/L3/L4）`)
   console.log('')
-  if (!result.checks.hasTestScript || !result.checks.smokeScriptExists) {
-    console.log('提示  基建未就绪 → AI 无法自证修改正确，每轮仍需人工验证')
-    console.log('      见 docs/TASKS.md V-001 / V-004 与 docs/STATE.md D-033')
-    console.log('')
-  }
   console.log('复查命令')
+  console.log('  npm run smoke                          四层冒烟（L4 需图形环境）')
   console.log('  node scripts/project-status.mjs --open    列出未闭环项')
   console.log('  node scripts/project-status.mjs --json    机器可读输出')
   console.log('')

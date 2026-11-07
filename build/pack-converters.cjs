@@ -26,12 +26,34 @@ if (!fs.existsSync(scriptFile)) {
 }
 const scriptBuf = fs.readFileSync(scriptFile)
 const scriptSha = crypto.createHash('sha256').update(scriptBuf).digest('hex')
+
+// 资产文件（pdfjs worker 等）：dist/converters/assets/**（R-096）
+// zip 路径与安装白名单（converters-component.cjs 的 ALLOWED_DIR_PREFIXES = ['assets/']）对齐
+const assetFiles = []
+const assetsDir = path.join(SRC, 'assets')
+if (fs.existsSync(assetsDir)) {
+  const walk = (dir, prefix) => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name)
+      const rel = prefix ? `${prefix}/${name}` : name
+      if (fs.statSync(full).isDirectory()) walk(full, rel)
+      else assetFiles.push({ rel: `assets/${rel}`, full })
+    }
+  }
+  walk(assetsDir, '')
+}
+// 硬校验（R-096）：worker 缺失则组件内所有 PDF 源转换（→docx/png/azw3）都会失败，
+// 宁可打包中断也不静默发布残缺组件
+if (!assetFiles.some((f) => f.rel === 'assets/pdf.worker.min.mjs')) {
+  console.error('[pack-converters] 缺少 assets/pdf.worker.min.mjs（pdfjs worker）——请检查 vite.config.converters.js 的 copy-pdfjs-worker 插件是否执行')
+  process.exit(1)
+}
 const manifest = {
   name: 'doclite-converters',
   version: VERSION,
   minAppVersion: VERSION, // 主进程安装时校验：高于当前应用版本则拒绝（防 API 错配）
   sha256: scriptSha, // 主进程解包后校验 converters.js 一致性（防通道内替换）
-  files: ['converters.js', 'manifest.json'],
+  files: ['converters.js', 'manifest.json', ...assetFiles.map((f) => f.rel)],
 }
 
 // ---------- 1/2) zip + sha256 ----------
@@ -40,6 +62,12 @@ const FIXED_MTIME = new Date('1980-01-01T00:00:00Z') // zip DOS 时间下限（f
 const files = {
   'converters.js': [new Uint8Array(scriptBuf), { mtime: FIXED_MTIME }],
   'manifest.json': [new Uint8Array(Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8')), { mtime: FIXED_MTIME }],
+}
+for (const f of assetFiles) {
+  files[f.rel] = [new Uint8Array(fs.readFileSync(f.full)), { mtime: FIXED_MTIME }]
+}
+if (assetFiles.length) {
+  console.log(`[pack-converters] 附带资产 ${assetFiles.length} 个：${assetFiles.map((f) => f.rel).join(', ')}`)
 }
 const zipBuf = Buffer.from(zipSync(files, { level: 9, mtime: FIXED_MTIME }))
 const zipName = `DocLite-converters-${VERSION}.zip`
@@ -59,6 +87,11 @@ if (process.platform === 'linux') {
   fs.mkdirSync(payload, { recursive: true })
   fs.copyFileSync(scriptFile, path.join(payload, 'converters.js'))
   fs.writeFileSync(path.join(payload, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  for (const f of assetFiles) {
+    const dest = path.join(payload, f.rel)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.copyFileSync(f.full, dest)
+  }
 
   const debian = path.join(tree, 'DEBIAN')
   fs.mkdirSync(debian, { recursive: true })

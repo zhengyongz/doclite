@@ -540,10 +540,26 @@ eleases/latest/download/<文件名> 稳定地址，始终指向最新 Release。
 - **验证**：8 组状态机样例（含审查 B/C/D/E 复现样例与同物理行尾巴剔除）全部通过；`npm run build` 通过；Electron 冒烟 `.xls` 预览 + 侧栏滑出/收起（-336px）正常
 - **已知限制（预存在）**：副标题过滤窗口不跨页（标题在页尾、副标题在次页顶部会漏）；英文副标题含冒号/Title Case 不识别（维持现状防误删正文）
 
+### 9. L4 集成测试重写 + R-096 pdfjs worker 缺失修复（2026-11-07）
+
+B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令包的唯一 🔴 项）。
+
+- **修 `project-status.mjs` 基建误报**：原是 P1 方案（检查 `scripts/smoke.cjs` 单文件、package.json test script——早被 D-033 四层套件取代）→ 持续报 3 ✗；重写为检查 npm scripts 齐备 + `run.mjs` + 三套测试脚本存在性 → 3 ✓
+- **重写 L4 `scripts/smoke/integration-app.cjs`**（A 环境准备 / B 沉浸交互 / C 转换端到端，共 27 项断言）：
+  - 修复原 4 项误报：`.app-sidebar` 仅沉浸态挂载（改测侧栏根节点）、固定 sleep 换轮询等待、瞬移不触发 DOM enter/leave（改单步跳变驱动窗口级 mousemove）、隐藏窗口过渡冻结（B 段前 `showInactive()`）
+  - B 段防回归：打开文件自动收起（轮询至 -336）、x=200（左 20% 内）滑出侧栏（守住 v0.8.1 20% 热区方案，防退回 8px）、分步移出收起
+  - C 段（B-017/B-020/V-002 本地部分）：`printToPDF` 合成含用户报告结构的 PDF（两章 + 每章中文章名 + 三行大写英文副标题 + 目录页）→ 注入真实组件 bundle → `convertFile('to-azw3')` 真实转换（拦 `downloadBlob` 产物落盘）→ 用应用自身 foliate-js 预览打开 → C5 正文零英文副标题 / C6 中文章名保留 / C7 目录无英文 / C8 目录含两章标题
+- **R-096 新发现并已修**（v0.5.0 组件拆分起即存在的真实缺陷）：组件 bundle 内联的 pdfjs 与主应用是两个模块实例，组件从未配置 workerSrc → **应用内 PDF 转 Word/PNG/AZW3 全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`**；此前单元测试全测纯函数、端到端从未跑过（V-002 缺口的实证，顺带证实用户此前报不出此错的链路）。修复：`converters.js` 模块顶层同步捕获 `document.currentScript` 合成组件目录定位 worker；`vite.config.converters.js` 构建期 `copy-pdfjs-worker` 插件复制 worker 到 `dist/converters/assets/`（不能用 `?url`——Vite lib 模式内联成 data: URL，Chromium/CSP 拒绝 data: worker）；`pack-converters.cjs` 把 `assets/**` 纳入 zip/deb/manifest 并对 worker 缺失硬校验中断打包。方案全文见 STATE.md D-036
+- **测试方法论沉淀**（STATE.md D-037）：隐藏窗口 CSS 过渡不推进（300ms 实测 1.8s 悬挂）、hover hit-test 不更新、printToPDF + Noto CJK 汉字变康熙部首变体（⼗≠十、目录→⽬录）→ 对策：`showInactive()` / 轮询 transform / fixture 目录页标题用英文 `Contents` + `normCJK()` 归一化
+- **MOBI 目录来源确认**：foliate-js 从书内目录页的 `a[filepos]`（guide 指向）读 TOC，源 PDF 无目录页则 TOC 为空——旧 C8 失败是 fixture 覆盖问题而非缺陷
+- **验证**：`npm run build`（含组件 bundle）通过；`npm run smoke` **93/93 项全过（0 失败 0 跳过）**，L4 B/C 段全绿；转换产物存 `.smoke-report/smoke-subtitle-e2e.pdf / .mobi` 供人工复核
+- **待真机**：B-020 / V-002 剩原始样本 PDF + Kindle/文石真机复核；R-096 修复随 v0.8.2 组件发布才对存量用户生效（旧组件装入新应用不报错但转换仍坏，见 D-036 兼容边界）
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）
 - macOS hiddenInset+vibrancy 效果待真机验证
 - H2 的 ad-hoc 重签与 .lproj 裁剪需 macOS CI/真机验证（本机 Linux 无法运行 .app）
+- v0.8.1 三项修复（B-017~B-019）：本地端到端已闭环（2026-11-07 L4 C 段），剩原始样本 PDF + Kindle/文石真机复核（B-020 / V-002）
 
 > AI生成

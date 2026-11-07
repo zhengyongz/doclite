@@ -11,7 +11,34 @@
  * 性能说明：所有重依赖（pdfjs-dist / jspdf / html2canvas / xlsx / jszip / docx / mobiWriter）
  * 均改为"函数内动态 import()"——仅在用户实际执行转换时才加载对应代码块，浏览文档时主进程
  * 不加载这些转换库，从而加快启动、降低常驻内存（由 Vite 自动拆分为独立 chunk）。
+ *
+ * pdfjs worker 说明（R-096）：
+ *   本模块打包进**独立转换组件**（vite.config.converters.js，IIFE 单文件），
+ *   其内联的 pdfjs-dist 与主应用 PdfRenderer 里的 pdfjs 是**两个互不相通的模块实例**——
+ *   主应用配置的 GlobalWorkerOptions.workerSrc 对本实例无效。若不在此配置，
+ *   组件内所有 PDF 源转换（→ docx / png / azw3）都会抛
+ *   `No "GlobalWorkerOptions.workerSrc" specified.`（v0.5.0 组件拆分起缺失，端到端验证发现）。
+ *   worker 以资源文件随组件发布（assets/pdf.worker.min.mjs，vite 插件构建期从
+ *   node_modules 复制 —— 不能用 `?url`：Vite lib 模式会内联成 data: URL，
+ *   而 Chromium/CSP 均拒绝 data: worker；安装白名单 assets/** 已允许）。
+ *   路径必须以组件自身目录为基准合成绝对地址 —— 经典 <script> 注入执行期间
+ *   document.currentScript 可用（动态 import 发生在其后，届时 currentScript
+ *   已为 null，故必须在模块初始化时同步捕获）。
  */
+import * as pdfjsLib from 'pdfjs-dist'
+
+const PDF_WORKER_REL = 'assets/pdf.worker.min.mjs' // 与 vite.config.converters.js 的复制插件、pack-converters.cjs 的清单约定一致
+
+;(() => {
+  try {
+    if (typeof document === 'undefined') return // 单元/Node 环境无 document，跳过
+    const cs = document.currentScript
+    if (!cs || !cs.src) return
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(PDF_WORKER_REL, new URL('.', cs.src).href).href
+    }
+  } catch { /* 路径合成失败时保持未配置，pdfjs 在转换时会给出明确错误 */ }
+})()
 
 // ---------- 通用：触发浏览器下载 ----------
 export function downloadBlob(blob, filename) {

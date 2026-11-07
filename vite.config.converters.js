@@ -2,14 +2,33 @@
 // 转换组件独立构建：IIFE 单文件（window.DocLiteConverters），输出 dist/converters/
 // 与主应用构建（vite.config.js）完全分离——主包不包含任何转换库，实现"浏览/转换"分离安装。
 import { defineConfig } from 'vite'
-import { readFileSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { readFileSync, copyFileSync, mkdirSync } from 'fs'
+import { resolve, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 
-const pkg = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'package.json'), 'utf8'))
+const HERE = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(resolve(HERE, 'package.json'), 'utf8'))
+
+// R-096：pdfjs worker 以真实文件随组件发布。
+// 组件内联的 pdfjs 与主应用是两个独立模块实例，worker 必须自带；data:/blob: 形态
+// 会被 Chromium/CSP 拒绝，`?url` 在 lib 模式下又会被内联成 data: URL ——
+// 故构建期直接把 worker 复制到 dist/converters/assets/（代码侧用
+// document.currentScript 定位组件目录后拼 assets/pdf.worker.min.mjs）。
+function copyPdfjsWorker() {
+  return {
+    name: 'copy-pdfjs-worker',
+    closeBundle() {
+      const src = resolve(HERE, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')
+      const dest = resolve(HERE, 'dist/converters/assets/pdf.worker.min.mjs')
+      mkdirSync(dirname(dest), { recursive: true })
+      copyFileSync(src, dest)
+      console.log(`[converters] pdfjs worker → ${relative(HERE, dest)}`)
+    },
+  }
+}
 
 export default defineConfig({
-  plugins: [],
+  plugins: [copyPdfjsWorker()],
   // 不复制 public 目录（避免 vite.svg 等主应用资源混入组件包）
   publicDir: false,
   define: {
