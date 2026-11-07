@@ -38,6 +38,20 @@ jobs:
           node-version: 20
           cache: 'npm' # 只缓存 npm 缓存目录，node_modules 不缓存（npm ci 每次全量装）
 
+      # ---------- electron / electron-builder 二进制缓存 ----------
+      # 发版每次要下 Electron 二进制（~100MB/平台/架构）+ winCodeSign + nsis 工具链，
+      # 不缓存则每次发版都重下（数分钟）。只缓存下载缓存，不缓存 node_modules。
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-builder-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-${{ runner.os }}-${{ matrix.platform }}-
+            electron-builder-${{ runner.os }}-
+
       - name: Install dependencies
         run: npm ci
 

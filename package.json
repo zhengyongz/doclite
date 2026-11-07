@@ -15,7 +15,17 @@
     "electron:build": "npm run build && electron-builder --linux deb --publish never && node build/pack-converters.cjs",
     "electron:build:win": "npm run build && electron-builder --win nsis --publish never && node build/pack-converters.cjs",
     "build:app": "vite build",
-    "build:converters": "vite build -c vite.config.converters.js"
+    "build:converters": "vite build -c vite.config.converters.js",
+    "status": "node scripts/project-status.mjs",
+    "status:open": "node scripts/project-status.mjs --open",
+    "status:json": "node scripts/project-status.mjs --json",
+    "smoke": "node scripts/smoke/run.mjs",
+    "smoke:static": "node scripts/smoke/run.mjs --layer=L1",
+    "smoke:logic": "node scripts/smoke/run.mjs --layer=L2",
+    "smoke:unit": "node scripts/smoke/run.mjs --layer=L3",
+    "smoke:integration": "node scripts/smoke/run.mjs --layer=L4",
+    "verify": "node scripts/verify.mjs",
+    "handoff": "node scripts/handoff.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.11"

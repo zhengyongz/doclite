@@ -32,6 +32,22 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # ---------- electron / electron-builder 二进制缓存 ----------
+      # 为什么加：electron-builder 每次要下载 Electron 二进制（~100MB/平台/架构）
+      # 与 winCodeSign / nsis 工具链，不缓存则每次 CI 都重下（数分钟）。
+      # 注意：只缓存 electron-builder 的下载缓存目录，绝不缓存 node_modules
+      # （postinstall 的 patch-package 必须每次执行，否则 foliate-js 补丁不生效）。
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-builder-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-${{ runner.os }}-${{ matrix.platform }}-
+            electron-builder-${{ runner.os }}-
+
       - name: Install dependencies
         run: npm ci
 
@@ -65,5 +81,12 @@ jobs:
       - name: Package (Linux)
         if: matrix.platform == 'linux'
         run: npx electron-builder --linux deb --publish never
+
+      # ---------- 冒烟测试（linux job 跑，验证功能而非仅构建） ----------
+      # 为什么要跑：CI 原本只验「构建成功」，功能坏掉要等发版才暴露。
+      # 冒烟覆盖 L1 静态 + L2 逻辑 + L3 组件安全单元（L4 集成需图形环境，CI 无显示设备故跳过）。
+      - name: Smoke test (L1-L3)
+        if: matrix.platform == 'linux'
+        run: node scripts/smoke/run.mjs --skip=L4
 
       # 不上传资产、不创建 Release、不跑 pack-converters（CI 只验证主包构建链路）

@@ -162,6 +162,26 @@ doclite/
 
 详细开发记录见 [DEVLOG.md](./DEVLOG.md)。
 
+## 开发者指南
+
+参与本项目开发（尤其是用 AI 辅助开发）前，请先读这几份文档：
+
+| 文档 | 内容 |
+|------|------|
+| [docs/操作手册.md](./docs/操作手册.md) | **一页纸操作手册** —— 日常只需要记 4 个命令 |
+| [docs/TASKS.md](./docs/TASKS.md) | 问题清单（唯一事实源，带状态） |
+| [docs/STATE.md](./docs/STATE.md) | 决策台账（为什么这么做，改动前必读） |
+| [docs/smoke/README.md](./docs/smoke/README.md) | 冒烟测试套件说明 |
+
+常用命令：
+
+```bash
+npm run handoff    # 生成给 AI 协作者的交接指令包
+npm run smoke      # 冒烟测试（改动后必跑）
+npm run status     # 查看问题清单与项目状态
+npm run verify     # 发版前体检
+```
+
 ## 安全说明
 
 - 所有文件读取、渲染和格式转换完全在**浏览器本地沙盒**中进行

@@ -62,3 +62,6 @@ pnpm-debug.log*
 coverage/
 *.local
 .workbuddy/
+
+# 冒烟测试产物（报告、截图、下载缓存）——不入库，测试每次现生成
+.smoke-report/
