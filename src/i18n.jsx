@@ -90,6 +90,7 @@ const zh = {
   'convert.hdLabel': '高清导出（打印级，体积较大）',
   'convert.hdTitle': '标准：屏幕阅读清晰，体积小速度快；高清：约 200 DPI 打印级，体积约为标准的 2.5 倍',
   'convert.blockedTitle': '当前组件不支持 .xls，请先更新组件',
+  'convert.blockedTitlePdf': '当前组件需更新后才能转换 PDF，请先更新组件',
   'convert.loadingTitle': '转换组件加载中…',
   'convert.progress': '正在转换中，请稍候…',
   'convert.exportPdf': '导出为 PDF',
@@ -101,6 +102,7 @@ const zh = {
   'convert.exportMobi': '导出为电子书 (MOBI)',
   'convert.exportMobiDesc': '将 PDF 转换为 Kindle 电子书格式',
   'convert.failed': '转换失败：{msg}',
+  'convert.workerMissing': '组件缺少 PDF 解析文件，请更新组件后重试。',
 
   // renderers
   'renderer.azw.loading': '正在解析电子书…',
@@ -233,6 +235,7 @@ const en = {
   'convert.hdLabel': 'High quality (print-grade, larger)',
   'convert.hdTitle': 'Standard: crisp on screen, small and fast; High: ~200 DPI print quality, ~2.5× the size',
   'convert.blockedTitle': 'The current component does not support .xls; update it first',
+  'convert.blockedTitlePdf': 'The component must be updated to convert PDF; update it first',
   'convert.loadingTitle': 'Loading converter component…',
   'convert.progress': 'Converting, please wait…',
   'convert.exportPdf': 'Export to PDF',
@@ -244,6 +247,7 @@ const en = {
   'convert.exportMobi': 'Export as ebook (MOBI)',
   'convert.exportMobiDesc': 'Convert the PDF to a Kindle ebook',
   'convert.failed': 'Conversion failed: {msg}',
+  'convert.workerMissing': 'The converter component is missing the PDF worker. Please update the component and retry.',
 
   'renderer.azw.loading': 'Parsing ebook…',
   'renderer.azw.failed': 'Parse failed',
@@ -407,6 +411,8 @@ function translate(lang, key, vars) {
 
 // ts：翻译一个「动态原文/后端消息」。en 下先精确匹配，再按已知正则兜底；zh 原样返回。
 function ts(lang, s) {
+  // —— pdfjs worker 缺失（R-096 / M3）：组件缺 worker 文件，zh/en 都要给出可操作提示 ——
+  if (/^Setting up fake worker failed:/.test(s)) return translate(lang, 'convert.workerMissing')
   if (lang !== 'en') return s
   if (s == null) return s
   const exact = en[s]

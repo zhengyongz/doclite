@@ -127,6 +127,20 @@ function main() {
     report.checks.smoke = { skipped: true }
   }
 
+  // ---- 4. 版本号一致性（H1：防打 v0.8.2 tag 却仍用 0.8.1 产物）----
+  try {
+    const pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+    report.checks.version = { version: pkgVersion }
+    const tagList = spawnSync('git', ['tag', '--list'], { cwd: ROOT, encoding: 'utf8' })
+    if (tagList.status === 0) {
+      const tags = (tagList.stdout || '').split('\n').map((t) => t.trim()).filter(Boolean)
+      const versionTag = `v${pkgVersion}`
+      if (tags.includes(versionTag)) {
+        report.warnings.push(`已存在 tag ${versionTag}：若本次要发的是新版本，请先 bump package.json 版本号，避免同版本重复发版/组件永远过期`)
+      }
+    }
+  } catch { /* 读取失败则跳过，不阻塞 */ }
+
   report.ok = report.blockers.length === 0
 
   if (wantJson) {
@@ -144,6 +158,7 @@ function main() {
       const s = report.checks.state
       out(`决策台账    ${s.decisions} 条决策 · ${s.pendings} 项待拍板`)
     }
+    if (report.checks.version) out(`版本号      v${report.checks.version.version}`)
     if (report.checks.smoke) {
       const s = report.checks.smoke
       if (s.skipped) out(`冒烟测试    ${c.d}已跳过${c.x}`)

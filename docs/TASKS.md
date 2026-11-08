@@ -35,22 +35,22 @@
 
 | 维度 | 数量 |
 |---|---|
-| 总条目 | **128** |
-| ├ R-xxx 审查意见 | 96 |
+| 总条目 | **138** |
+| ├ R-xxx 审查意见 | 106 |
 | ├ B-xxx 用户反馈 | 20 |
 | ├ T-xxx 技术债 | 8 |
 | └ V-xxx 验证缺口 | 4 |
 | 🔴 高 | 14（+ B 段 20 项按 🔴 计） |
-| 🟡 中 | 53 |
-| ⚪ 低 | 41 |
+| 🟡 中 | 58 |
+| ⚪ 低 | 46 |
 
 | 状态 | 数量 |
 |---|---|
-| 已修 | 73 |
+| 已修 | 74 |
 | 已知限制 | 6 |
-| **未闭环（待修 46 + 待验 3）** | **49** |
+| **未闭环（待修 55 + 待验 3）** | **58** |
 
-**未闭环分布**：🔴 1 · 🟡 27 · ⚪ 21
+**未闭环分布**：🔴 1 · 🟡 31 · ⚪ 26
 
 ### 未闭环高优先级（优先看这 1 项）
 
@@ -58,7 +58,7 @@
 |---|---|---|
 | B-020 | 三项问题修复后端到端仍需真机复核 | 唯一一条 🔴 未闭环；本地端到端已闭环（L4 C 段，2026-11-07），剩真机 |
 
-### 未闭环中优先级（27 项，按主题归类）
+### 未闭环中优先级（31 项，按主题归类）
 
 | 主题 | 条目 | 数量 |
 |---|---|---|
@@ -69,10 +69,11 @@
 | 验证缺口 | V-002、V-003 | 2 |
 | 开发技术债 | T-001、T-002、T-003、T-005、T-006 | 5 |
 | 清理项 | R-049 | 1 |
+| v0.8.2 审查发现（worker/组件安全/测试） | R-097、R-099、R-100、R-101 | 4 |
 
-### 未闭环低优先级（21 项）
+### 未闭环低优先级（26 项）
 
-R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、R-084、R-085、R-086、R-087、R-088、R-089、R-090、R-091、R-092、R-093、R-094
+R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、R-084、R-085、R-086、R-087、R-088、R-089、R-090、R-091、R-092、R-093、R-094、R-102、R-103、R-104、R-105、R-106
 
 > 其中 **R-033 / R-034 / R-037** 虽列 🟡，实为升级链路安全项（渲染层可指定任意路径 / 任意剪贴板内容 / 无大小校验），**建议提到 🔴**（见 Q-005）。
 
@@ -144,6 +145,11 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-052 | 审查 i18n L2 | 导出物内容仍含中文（`— 第 N 页 —`、`<h1>目录</h1>`、`creator: 'DocLite 生成'`） | `src/utils/converters.js` | 已知限制 | — | 需把 lang 传进转换器，成本不低 |
 | R-053 | 审查 v0.6.0 L5 | `xlsx@0.18.5` 是 npm 最后一版，存在 CVE-2023-30533 / CVE-2024-22363 | `package.json:45` | 待修 | — | 修复版只在 SheetJS 官方 CDN；.xls 支持扩大了 BIFF 解析面 |
 | R-054 | 审查 v0.6.0 L6 | `actions/*@v4`、`softprops/action-gh-release@v2` 用可变 tag，发版 job 持写权限 | `.github/workflows/release.yml` | 待修 | — | 建议 pin 到 commit SHA |
+| R-097 | 审查 v0.8.2 M2 | 系统级/deb 组件不读取 `minAppVersion`，新组件可装旧版应用 | `electron/converters-component.cjs:176-198` | 待修 | — | `readComponentInfo` 读 minAppVersion 标记 compatible，状态过滤 + UI 提示；D-036 措辞需修正 |
+| R-098 | 审查 v0.8.2 M3 | 旧组件缺 worker 时报原始英文错误，PDF 转换未前置拦截 | `src/components/ConvertPanel.jsx` + `src/i18n.jsx` | 已修 | v0.8.2 | 已做 `.pdf` 过时门槛（to-docx/png/azw3 禁用）+ ts() worker 报错映射；余「workerOk 主进程探测」可 0.8.3 补 |
+| R-099 | 审查 v0.8.2 M4 | `manifest.files` 只写不校验，安装后还写成数字 | `electron/converters-component.cjs:137-165,335` | 待修 | — | 校验清单与键集合一致；写回保留数组或改 `fileCount` |
+| R-100 | 审查 v0.8.2 M5 | `assets/../converters.js` 可绕过脚本哈希覆盖（`..` 归一化） | `electron/converters-component.cjs:55-60,231` | 待修 | — | 拒绝 `.`/`..` 段 + 归一目标去重 + 受保护文件最后写 |
+| R-101 | 审查 v0.8.2 M1+M6 | L4 C2 空断言；CI 不跑 L4/xvfb，R-096 类缺陷无回归门禁 | `integration-app.cjs:348`、`ci.yml` | 待修 | — | CI worker 存在性门禁已在 v0.8.2 完成；余：去 C2 短路 + xvfb L4 |
 
 ---
 
@@ -192,6 +198,11 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-093 | 审查 项目审查 #13 | 死代码：`MIME_MAP`、`formatSize`、`downloadMobi`、`linearSections`、`pdfjsLibGetPage` 等 | 多处 | 待修 | — | `downloadMobi` 仍在（`mobiWriter.js:1019`） |
 | R-094 | 审查 项目审查 #14 | `ErrorToast` 内层 `setTimeout(clearError, 300)` 未纳入清理 | `src/components/ErrorToast.jsx` | 待修 | — | 影响极小 |
 | R-095 | 审查 项目审查 #15 | `main.cjs` 未处理 macOS `open-file` 事件 | `electron/main.cjs` | 已修 | v0.6.0 | 已移至模块顶层注册 |
+| R-102 | 审查 v0.8.2 L1 | 静态 `import pdfjs` 破坏「重依赖函数内动态 import」设计 | `src/utils/converters.js:28` | 待修 | — | 顶层只算 `WORKER_URL`，转换函数内 import 后再设 workerSrc |
+| R-103 | 审查 v0.8.2 L3+L6 | 「27 项断言」实为 25 项；「复用 main.cjs」实为手工建窗 | `DEVLOG.md`、`scripts/smoke/integration-app.cjs` | 待修 | — | 修正文档；抽 `createMainWindow()` 供测试复用 |
+| R-104 | 审查 v0.8.2 L2+L4+L5 | L4 只测 PDF→AZW3 未覆盖 DOCX/PNG；normCJK 覆盖不全；pdfWin 窗口泄漏 | `scripts/smoke/integration-app.cjs` | 待修 | — | 各加 1 条魔数断言；NFKC 先行；`try/finally destroy` |
+| R-105 | 审查 v0.8.2 L7+L8 | smoke 触发真实 GitHub 请求；release.yml job 级 `contents: write` 仍在 | `integration-app.cjs`、`release.yml` | 待修 | — | `registerUpdater` 加 `autoCheck` 开关；上传拆独立 job |
+| R-106 | 审查 v0.8.2 L9 | `pack-converters.cjs` 对 `assets/**` 递归收任意文件，未来 Vite 吐字体/图片会悄悄进包 | `build/pack-converters.cjs:32-44` | 待修 | — | 只收 `pdf.worker.min.mjs` 或按扩展名白名单（.mjs/.js/.wasm） |
 
 ---
 

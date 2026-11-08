@@ -89,4 +89,12 @@ jobs:
         if: matrix.platform == 'linux'
         run: node scripts/smoke/run.mjs --skip=L4
 
+      # ---------- R-096 防回归门禁 ----------
+      # R-096 的特征是「构建成功、单元测试全绿，只有真实转换才暴露」（组件缺 pdfjs worker）。
+      # CI 不跑 L4 也未必装 Xvfb，这里先加零成本门禁：worker 文件必须随组件 bundle 产出。
+      # （更彻底的 xvfb L4 见 TASKS.md R-101，留 0.8.3）
+      - name: Verify converter pdf worker bundled (R-096 gate)
+        if: matrix.platform == 'linux'
+        run: node -e "if(!require('fs').existsSync('dist/converters/assets/pdf.worker.min.mjs')){console.error('[ci] pdf worker missing');process.exit(1)}"
+
       # 不上传资产、不创建 Release、不跑 pack-converters（CI 只验证主包构建链路）

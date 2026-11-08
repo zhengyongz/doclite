@@ -109,6 +109,9 @@ export default function ConvertPanel() {
   // .xls 为 v0.7.0 新增能力：旧版组件（<0.7.0）的 convertFile 只认 .xlsx，
   // 直接放行会出现“能看到按钮但点了必报错”，故按版本门槛禁用（workbuddy M2）
   const xlsNeedsUpdate = !!outdated && ext === '.xls'
+  // R-096 后：组件缺 pdfjs worker 文件时，PDF 源转换（to-docx/png/azw3）会报
+  // “Setting up fake worker failed”，故组件落后于应用时也前置拦截（workbuddy M3）
+  const pdfNeedsUpdate = !!outdated && ext === '.pdf'
 
   const handleConvert = async (key) => {
     if (isConverting) return
@@ -215,13 +218,15 @@ export default function ConvertPanel() {
       <div className="flex flex-col gap-2">
         {status?.installed && conversions.map(({ key, label, description, icon: Icon, color }) => {
           const isThisConverting = isConverting
-          const blocked = xlsNeedsUpdate && key === 'to-pdf'
+          const xlsBlocked = xlsNeedsUpdate && key === 'to-pdf'
+          const pdfBlocked = pdfNeedsUpdate && (key === 'to-docx' || key === 'to-png' || key === 'to-azw3')
+          const blocked = xlsBlocked || pdfBlocked
           return (
             <button
               key={key}
               onClick={() => handleConvert(key)}
               disabled={isConverting || !api || blocked}
-              title={blocked ? t('convert.blockedTitle') : (!api ? t('convert.loadingTitle') : undefined)}
+              title={xlsBlocked ? t('convert.blockedTitle') : (pdfBlocked ? t('convert.blockedTitlePdf') : (!api ? t('convert.loadingTitle') : undefined))}
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-ink-200 bg-white hover:border-accent-300 hover:bg-accent-50/40 transition-colors focus-ring group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isThisConverting ? (

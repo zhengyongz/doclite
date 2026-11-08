@@ -405,7 +405,7 @@
 2. 路径必须以组件自身目录为基准：组件可装在 dev 目录 / `/opt/DocLite/resources/converters` / 用户级 userData 三处（D-001），相对主包的路径不可用。
 3. `document.currentScript` 必须在模块初始化时同步捕获：经典 `<script>` 注入执行期间它才有效；重依赖走函数内动态 `import()`，届时同步段已执行完、它已为 null。
 
-**兼容边界**：安装白名单的 `assets/` 目录前缀早已预留（D-009 白名单机制不变）；旧组件（v0.8.1 及以前，无 assets）装入新应用不报错，但其内 PDF 源转换仍坏，需升级组件才能修复；新组件（v0.8.2+）装入旧应用由 `minAppVersion` 门槛拦截（R-015），属预期。
+**兼容边界**：安装白名单的 `assets/` 目录前缀早已预留（D-009 白名单机制不变）；旧组件（v0.8.1 及以前，无 assets）装入新应用不报错，但其内 PDF 源转换仍坏，需升级组件才能修复——已由 R-098（v0.8.2）做「PDF 过时门槛 + 报错翻译」缓解；新组件（v0.8.2+）装入旧应用，**应用内安装**由 `minAppVersion` 门槛拦截（R-015）；但**系统级 deb / 手动放置**不读 `minAppVersion`、不拦截（见 R-097，0.8.3 处理），发版后建议用户用应用内「更新组件」升级。
 
 **影响面**：`src/utils/converters.js`、`vite.config.converters.js`、`build/pack-converters.cjs`
 
