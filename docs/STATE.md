@@ -165,12 +165,12 @@
 
 ## 三、体验与交互决策
 
-### D-039 · 2026-11-09 · PDF 预览按 devicePixelRatio 渲染（B-024）
-**决策**：`RENDER_SCALE = min(2, max(1, devicePixelRatio))`（普通屏维持 1.0 不增负担）；canvas 缓冲分辨率（RENDER_SCALE）与 CSS 布局尺寸（scale=1 的 viewport）解耦；高 dpr 下驻留 canvas 上限 20→12。
+### D-039 · 2026-11-09 · PDF 预览按「缩放 × 设备像素比」重新渲染，不用 CSS transform 拉伸（B-024）
+**决策**：canvas 渲染缓冲 = 页面基础尺寸 × `min(MAX_RENDER_SCALE=3, max(1, devicePixelRatio × 当前缩放))`；显示宽度 = 基础宽 × 缩放；**缩放变化时清空缓存、按新缓冲分辨率重渲染可见页**，废弃「CSS `transform: scale()` 拉伸固定 canvas」；高倍率下驻留 canvas 上限降至 8~12。
 
-**背景**：Retina（macOS 全系，dpr=2）下按 1.0 渲染再被 CSS 放大 2 倍，文字边缘明显模糊（用户对比截图实证）。
+**背景**：实测用户 Linux 系统 `devicePixelRatio=2`——旧实现按 1.0 渲染，Linux 100% 就发虚；且任何平台只要放大>100% 走 CSS 拉伸固定 canvas 就必糊（探针量：缓冲/显示物理像素比 120% 为 0.91、150% 为 0.83）。修复后各档均≈1.0。这与 dpr 无关，Linux/macOS/Windows 同因同解。
 
-**理由**：按物理像素渲染是唯一根治方法；封顶 2 与驻留减半兼顾内存（小内存 Retina 机会被 4 倍像素量压垮）。
+**理由**：只有按缩放重采样才保证「缓冲≥物理像素」不糊；封顶 3 与驻留动态上限避免极端缩放（200%×dpr2=4）打爆内存；占位高度/滚动随缩放等比，布局自洽。
 
 **影响面**：`src/components/renderers/PdfRenderer.jsx`
 

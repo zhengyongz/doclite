@@ -7,30 +7,42 @@ import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
-// 渲染比例：按设备像素比渲染（B-024：macOS Retina dpr=2 下按 1.0 渲染、
-// 再由 CSS 放大 2 倍会明显模糊；普通屏 dpr=1 维持 1.0，不增加内存/性能负担）
-const RENDER_SCALE = Math.min(2, Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1))
+// 设备像素比（Retina / 系统缩放）：决定渲染缓冲的最小物理分辨率。
+// 实测 Linux 系统缩放 200% 时 devicePixelRatio=2，若按 1.0 渲染再被屏幕放大
+// 必然发虚（B-024，2026-11-09 补充：Linux/macOS 同现，Windows 亦然——与 dpr 无关，
+// 只要"缩放用 CSS transform 拉伸固定 canvas"就会糊，必须按缩放重新渲染）。
+const DPR = Math.min(2, Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1))
+// 渲染倍率上限：canvas 缓冲像素 = 页面基础尺寸 × renderScale。
+// renderScale = min(MAX, max(1, DPR × 当前缩放))——保证任意缩放下缓冲≥显示像素（不糊），
+// 上限封顶避免极端缩放（200%×dpr2=4）把内存打爆（本机 7.6G）。
+const MAX_RENDER_SCALE = 3
 // 虚拟滚动：视口外上下各多渲染几页作为缓冲
 const BUFFER_PAGES = 1
-// canvas 駐留上限：超过后释放旧页 canvas，避免内存无限增长
-// （高 dpr 下单页像素量 4 倍，上限减半以免 Retina 机器内存吃紧）
-const MAX_RENDERED_PAGES = RENDER_SCALE > 1 ? 12 : 20
+// 页面上下间距
+const GAP = 12
 
 export default function PdfRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
   const { t } = useI18n()
   const [numPages, setNumPages] = useState(0)
-  const [pageHeights, setPageHeights] = useState([]) // 每页高度(px)用于占位
+  const [pageHeights, setPageHeights] = useState([]) // 每页基础高度(scale=1)，占位/滚动用
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
   const [renderedPages, setRenderedPages] = useState({}) // { pageNum: canvas }
   const [loading, setLoading] = useState(true)
 
   const pdfDocRef = useRef(null)
   const containerRef = useRef(null)
-  const renderingRef = useRef(new Set())  // 正在渲染中的页码，防止重复
-  const pageWidthRef = useRef(0)
+  const renderingRef = useRef(new Set()) // 正在渲染中的页码，防止重复
+  const pageWidthRef = useRef(0) // 页面基础宽(scale=1, CSS px)
+  const renderedRef = useRef({}) // 镜像 renderedPages，供 zoom 清理时拿全部 canvas
+  renderedRef.current = renderedPages
+  // 当前缩放与对应渲染倍率（供渲染/滚动/清理读取，避免把 zoom 加进每个 useCallback 依赖）
+  const zoomRef = useRef(1)
+  const scaleRef = useRef(DPR)
+  zoomRef.current = Math.max(0.5, Math.min(2, zoomLevel / 100))
+  scaleRef.current = Math.min(MAX_RENDER_SCALE, Math.max(1, DPR * zoomRef.current))
 
-  // 1. 加载 PDF 文档，获取页数和每页尺寸（不做渲染）
+  // 1. 加载 PDF，取每页基础尺寸（scale=1，不渲染）
   const loadPdf = useCallback(async () => {
     if (!currentFile?.file) return
     try {
@@ -44,15 +56,11 @@ export default function PdfRenderer() {
       pdfDocRef.current = pdfDoc
       setNumPages(pdfDoc.numPages)
 
-      // 首屏优化：只取第 1 页高度确定页宽，大 PDF 不必逐页 getPage
-      // 注意：布局尺寸（CSS 像素）必须用 scale=1 的 viewport，与 canvas 缓冲
-      // 分辨率（RENDER_SCALE，见 B-024）解耦，否则高 dpr 下页面会被拉大一倍
+      // 布局基准（CSS 像素）用 scale=1 的 viewport，与 canvas 缓冲分辨率解耦：
+      // 显示宽度 = baseW × 缩放，缓冲 = baseW × scaleRef（≈ baseW×dpr×缩放）
       const firstPage = await pdfDoc.getPage(1)
       const firstViewport = firstPage.getViewport({ scale: 1 })
       pageWidthRef.current = firstViewport.width
-
-      // 估算每页高度：第 1 页实际高度，其余用第 1 页高度近似
-      // （滚动时按实际内容自适应，不影响虚拟滚动的占位）
       const heights = new Array(pdfDoc.numPages).fill(firstViewport.height)
       setPageHeights(heights)
       setLoading(false)
@@ -63,60 +71,46 @@ export default function PdfRenderer() {
     }
   }, [currentFile, setPreviewStatus, setError])
 
-  // 2. 滚动时计算可见区域，只渲染可见页 ± 缓冲页
+  // 2. 滚动时计算可见页范围（占位高度 = 基础高 × 缩放）
   const handleScroll = useCallback(() => {
     if (!containerRef.current || pageHeights.length === 0) return
-
     const container = containerRef.current
     const scrollTop = container.scrollTop
     const viewportHeight = container.clientHeight
+    const z = zoomRef.current
 
-    // 根据累计高度定位当前可视页面范围
     let cumulative = 0
     let startPage = 0
     let endPage = 0
-
     for (let i = 0; i < pageHeights.length; i++) {
-      const pageH = pageHeights[i] + 12 // 12px gap
-      if (cumulative + pageH < scrollTop) {
-        startPage = i + 1
-      }
-      if (cumulative < scrollTop + viewportHeight) {
-        endPage = i
-      }
+      const pageH = pageHeights[i] * z + GAP
+      if (cumulative + pageH < scrollTop) startPage = i + 1
+      if (cumulative < scrollTop + viewportHeight) endPage = i
       cumulative += pageH
     }
-
-    // 加上缓冲页
     const start = Math.max(0, startPage - BUFFER_PAGES)
     const end = Math.min(pageHeights.length - 1, endPage + BUFFER_PAGES)
-
     if (start !== visibleRange.start || end !== visibleRange.end) {
       setVisibleRange({ start, end })
     }
   }, [pageHeights, visibleRange])
 
-  // 3. 渲染单页到 canvas（直接用 canvas 元素，不转 base64）
+  // 3. 渲染单页到 canvas（按当前缩放的缓冲分辨率，不转 base64）
   const renderPage = useCallback(async (pageNum) => {
     const pdfDoc = pdfDocRef.current
     if (!pdfDoc || renderingRef.current.has(pageNum)) return
     renderingRef.current.add(pageNum)
-
     try {
       const page = await pdfDoc.getPage(pageNum)
-      const viewport = page.getViewport({ scale: RENDER_SCALE })
+      const viewport = page.getViewport({ scale: scaleRef.current })
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d', { alpha: false })
       canvas.width = viewport.width
       canvas.height = viewport.height
-      canvas.style.width = '100%'
+      // 显示宽度 = 基础宽 × 缩放；缓冲 = 基础宽 × scaleRef（≈ 显示×dpr）→ 不糊
+      canvas.style.width = `${pageWidthRef.current * zoomRef.current}px`
       canvas.style.height = 'auto'
-
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-      }).promise
-
+      await page.render({ canvasContext: ctx, viewport }).promise
       setRenderedPages(prev => ({ ...prev, [pageNum]: canvas }))
     } catch (err) {
       console.error(`[PdfRenderer] page ${pageNum} render error:`, err)
@@ -125,21 +119,18 @@ export default function PdfRenderer() {
     }
   }, [])
 
-  // 4. visibleRange 变化时触发渲染 + 清理超出上限的旧 canvas
+  // 4. visibleRange 变化时渲染可见页 + 清理超上限 canvas
   useEffect(() => {
     if (loading || numPages === 0) return
     for (let i = visibleRange.start; i <= visibleRange.end; i++) {
-      const pageNum = i + 1 // pdfjs 页码从 1 开始
-      if (!renderedPages[pageNum]) {
-        renderPage(pageNum)
-      }
+      const pageNum = i + 1
+      if (!renderedPages[pageNum]) renderPage(pageNum)
     }
-
-    // 清理超出 MAX_RENDERED_PAGES 的旧 canvas，释放内存
+    const maxPages = scaleRef.current > 1.5 ? 8 : scaleRef.current > 1 ? 12 : 20
     setRenderedPages(prev => {
       const keys = Object.keys(prev).map(Number).sort((a, b) => a - b)
-      if (keys.length <= MAX_RENDERED_PAGES) return prev
-      const toRemove = keys.slice(0, keys.length - MAX_RENDERED_PAGES)
+      if (keys.length <= maxPages) return prev
+      const toRemove = keys.slice(0, keys.length - maxPages)
       const next = { ...prev }
       for (const k of toRemove) {
         const canvas = next[k]
@@ -155,12 +146,29 @@ export default function PdfRenderer() {
     loadPdf()
   }, [loadPdf])
 
-  // 6. 加载完成后初始化可见范围（触发首屏渲染）
+  // 6. 加载完成 → 初始可见范围
   useEffect(() => {
-    if (!loading && numPages > 0 && visibleRange.end === 0) {
-      handleScroll()
-    }
+    if (!loading && numPages > 0 && visibleRange.end === 0) handleScroll()
   }, [loading, numPages, visibleRange, handleScroll])
+
+  // 7. 缩放变化：按比例保持滚动位置 → 清空缓存 → 用新缓冲分辨率重渲可见页。
+  //    关键：不能像旧版用 CSS transform 拉伸固定 canvas（>100% 必糊，Linux/macOS/Windows
+  //    全平台同现），必须按缩放重新渲染，见 B-024/STATE D-039。
+  useEffect(() => {
+    if (loading || numPages === 0) return
+    const el = containerRef.current
+    if (el) {
+      const oldZ = zoomRef.current
+      zoomRef.current = Math.max(0.5, Math.min(2, zoomLevel / 100))
+      scaleRef.current = Math.min(MAX_RENDER_SCALE, Math.max(1, DPR * zoomRef.current))
+      if (el.scrollTop > 0) el.scrollTop = el.scrollTop * (zoomRef.current / oldZ)
+    }
+    // 从 DOM 移除旧 canvas，并清空缓存强制以新 scale 重渲染
+    for (const c of Object.values(renderedRef.current)) {
+      if (c && c.parentNode) c.parentNode.removeChild(c)
+    }
+    setRenderedPages({})
+  }, [zoomLevel, loading, numPages])
 
   // 清理
   useEffect(() => {
@@ -174,18 +182,16 @@ export default function PdfRenderer() {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-ink-400 text-sm">
         <svg className="w-6 h-6 animate-spin text-accent-400" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
         <span>{t('renderer.pdf.loading')}</span>
       </div>
     )
   }
 
-  // 计算总高度用于占位（虚拟滚动）
-  const totalHeight = pageHeights.reduce((sum, h) => sum + h + 12, 0)
-  // CSS transform 缩放（不重新渲染 canvas）
-  const scale = zoomLevel / 100
+  const z = zoomRef.current
+  const totalHeight = pageHeights.reduce((s, h) => s + h * z + GAP, 0)
 
   return (
     <div
@@ -199,29 +205,18 @@ export default function PdfRenderer() {
             const pageNum = i + 1
             const inVisibleRange = i >= visibleRange.start && i <= visibleRange.end
             const canvas = renderedPages[pageNum]
-            const pageH = pageHeights[i] || 0
-
             return (
               <div
                 key={i}
-                style={{
-                  height: pageH,
-                  width: '100%',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  transform: `scale(${scale})`,
-                  transformOrigin: 'top center',
-                }}
+                style={{ height: pageHeights[i] * z, width: '100%', display: 'flex', justifyContent: 'center' }}
               >
                 {inVisibleRange && canvas ? (
                   <div
                     ref={el => {
-                      if (el && canvas && !el.firstChild) {
-                        el.appendChild(canvas)
-                      }
+                      if (el && canvas && !el.firstChild) el.appendChild(canvas)
                     }}
                     className="shadow-soft rounded"
-                    style={{ width: pageWidthRef.current, maxWidth: '100%' }}
+                    style={{ width: pageWidthRef.current * z, maxWidth: '100%' }}
                   />
                 ) : null}
               </div>
