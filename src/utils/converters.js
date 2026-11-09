@@ -998,7 +998,13 @@ export async function pdfToAzw3(file, filename, onProgress = null) {
         flushPara()
         postHeading = 0 // 图片断开副标题窗口
         // 图片按页面宽度比例缩放到 100%
-        html += `<p class="ebook-img"><img recindex="${item.recindex}" width="${item.width}" height="${item.height}"></p>\n`
+        // recindex 必须是 5 位零填充字符串（MOBI 规范要求，kindlegen/calibre 均如此输出；
+        // Kindle/文石的解析器只认 "00001" 形态——不带补零时整个 <img> 引用失效，
+        // 正文图片全部不显示，只剩走 EXTH coverOffset 二进制字段的封面（B-021，2026-11-09 真机复现）。
+        // foliate-js 与 calibre 对两种写法都宽容，应用内预览/本地测试不会暴露，务必真机验证图片。
+        // 历史教训：v8-v11 修复期该补零存在于未入库的临时脚本中，converters.js 重写时一度丢失。
+        const recIdx = String(item.recindex).padStart(5, '0')
+        html += `<p class="ebook-img"><img recindex="${recIdx}" width="${item.width}" height="${item.height}"></p>\n`
       }
     }
     flushPara()

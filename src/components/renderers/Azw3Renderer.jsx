@@ -94,6 +94,11 @@ export default function Azw3Renderer() {
       const cleanHtml = DOMPurify.sanitize(html, {
         ADD_TAGS: ['mbp:pagebreak'],
         ADD_ATTR: ['recindex', 'filepos', 'mediarecindex', 'href'],
+        // blob: 必须放行（B-021）：foliate 的 loadSection 把 img[recindex] 替换为
+        // 本地 blob: 图片 URL，DOMPurify 默认 URL 正则不含 blob: → src 被剥掉，
+        // 预览里正文图片全部消失（封面不经消毒走 React state，故"只剩封面"）。
+        // blob 内容全部来自应用自身解析的资源记录，无外联风险
+        ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|blob):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
       })
 
       setSectionContents(prev => ({ ...prev, [index]: cleanHtml }))
@@ -202,9 +207,10 @@ export default function Azw3Renderer() {
 
   return (
     <div className="h-full flex overflow-hidden">
-      {/* 侧边目录栏 */}
+      {/* 侧边目录栏。data-toc-panel：沉浸热区据此让路——鼠标悬在目录面板上时
+          （B-023）App.jsx 不弹出左侧工具栏浮层，避免遮挡目录 */}
       {showToc && (
-        <div className="w-64 shrink-0 border-r border-ink-200 bg-white overflow-y-auto p-3">
+        <div data-toc-panel="" className="w-64 shrink-0 border-r border-ink-200 bg-white overflow-y-auto p-3">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">{t('renderer.azw.toc')}</p>
             <button

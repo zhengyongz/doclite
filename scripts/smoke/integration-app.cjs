@@ -316,6 +316,7 @@ p { margin: 5px 0; }
 <p style="font-size:13px;letter-spacing:1px">GROWS AND</p>
 <p style="font-size:13px;letter-spacing:1px">WHY IT CRASHES</p>
 <p style="font-size:12px">在太平洋的某个岛上，人们用石头做货币。这里是正文第一段。</p>
+<img id="testimg" style="width:120px;height:90px">
 <p style="font-size:26px;font-weight:700">第十一章</p>
 <p style="font-size:15px">中岛帝国：远方的生命线 HOW AN ECONOMY GROWS AND WHY IT CRASHES</p>
 <p style="font-size:12px">这是第二章的正文段落，用于第二处验证。</p>
@@ -332,6 +333,18 @@ p { margin: 5px 0; }
     try {
       const pdfWin = new BrowserWindow({ show: false })
       await pdfWin.loadURL('data:text/html;charset=utf-8;base64,' + Buffer.from(subtitlePdfHtml, 'utf8').toString('base64'))
+      // 合成一张真实位图嵌入 PDF（B-021 图片回归网所需的图源）：
+      // Chromium printToPDF 会把它作为图片 XObject 嵌入，extractPageImages 才有图可提
+      await pdfWin.webContents.executeJavaScript(`
+        (() => new Promise(resolve => {
+          const c = document.createElement('canvas'); c.width = 120; c.height = 90
+          const x = c.getContext('2d'); x.fillStyle = '#c2410c'; x.fillRect(0, 0, 120, 90)
+          x.fillStyle = '#ffffff'; x.font = 'bold 18px sans-serif'; x.fillText('PIC-1', 24, 52)
+          const img = document.getElementById('testimg')
+          img.onload = () => resolve(true)
+          img.src = c.toDataURL('image/png')
+        }))()
+      `)
       await pdfWin.webContents.executeJavaScript('document.fonts.ready.then(() => true)')
       pdfBuf = await pdfWin.webContents.printToPDF({ pageSize: 'A4', printBackground: false })
       pdfWin.destroy()
@@ -406,33 +419,38 @@ p { margin: 5px 0; }
           !!azRendered && bookFailed === false,
           azRendered ? `ebook-content=ok` : '未渲染')
 
-        // 翻完全部章节，收集每章渲染文本
+        // 翻完全部章节，收集每章渲染文本与图片引用（B-021：图片必须被提取且 recindex
+        // 为 5 位零填充——不带补零时 Kindle/文石不认，正文图片全部消失只剩封面）
         const sweep = await withTimeout(win.webContents.executeJavaScript(`
           (async () => {
             const texts = []
+            const imgs = []
             const getText = () => { const el = document.querySelector('.ebook-content'); return el ? el.innerText : '' }
+            const collectImgs = () => Array.from(document.querySelectorAll('.ebook-content img')).forEach(i =>
+              imgs.push({ r: i.getAttribute('recindex'), w: i.naturalWidth }))
             const findNext = () => Array.from(document.querySelectorAll('button')).filter(b => /下一章|Next/.test(b.textContent || ''))[0]
             for (let i = 0; i < 20; i++) {
               await new Promise(r => setTimeout(r, 350))
               texts.push(getText())
+              collectImgs()
               const next = findNext()
               if (!next || next.disabled) break
               next.click()
             }
-            return texts.join('\\n@@\\n')
+            return { text: texts.join('\\n@@\\n'), imgs }
           })()
-        `), 30000, 'C5 章节遍历').catch(() => '')
+        `), 30000, 'C5 章节遍历').catch(() => ({ text: '', imgs: [] }))
 
         // 英文副标题残留：按「多词短语」判定——合成 PDF 的文本提取存在 y 抖动，
         // 与中文同行的首个英文词（如“…生命线 HOW”）可能残留在中文段落尾部，
         // 单词残留不视为回归；副标题短语的主体（≥2 词）必须全部消失
         const leak = ['HOW AN ECONOMY', 'GROWS AND', 'WHY IT CRASHES', 'HOW AN ECONOMY GROWS']
-          .filter((k) => sweep.toUpperCase().includes(k))
+          .filter((k) => (sweep.text || '').toUpperCase().includes(k))
         assert('C5 全部章节正文无英文副标题残留', leak.length === 0,
           leak.length ? `残留: ${leak.join(' / ')}` : `共收集 ${sweep.length} 字符文本`)
 
         // 中文章名与正文保留（经部首归一化后比较，见 normCJK 说明）
-        const nSweep = normCJK(sweep)
+        const nSweep = normCJK(sweep.text || '')
         const kept = ['第十章', '第十一章', '不断缩水的鱼就像货币一样', '中岛帝国：远方的生命线', '正文第一段']
           .filter((k) => !nSweep.includes(normCJK(k)))
         assert('C6 中文章名与正文保留', kept.length === 0, kept.length ? `缺失: ${kept.join(' / ')}` : '关键内容齐全')
@@ -455,6 +473,17 @@ p { margin: 5px 0; }
         assert('C7 目录无英文副标题条目', tocLeak.length === 0,
           hasLabels ? `目录 ${tocR.labels.length} 条：${nLabels.slice(0, 8).join(' | ')}` : '打开目录失败')
         assert('C8 目录含两章章节标题', tocKept.length === 0, tocKept.length ? `缺失: ${tocKept.join(' / ')}` : '')
+
+        // 图片引用回归网（B-021）：合成图必须被提取进 MOBI，且 recindex 为 5 位零填充
+        // （不带补零时 Kindle/文石解析器不认，正文图片全部消失只剩 EXTH 封面），
+        // 并经 foliate 真实加载成功（naturalWidth>0 = recindex→资源记录整条链路通）
+        const imgs = (sweep && Array.isArray(sweep.imgs)) ? sweep.imgs : []
+        const badFmt = imgs.filter(i => !/^\d{5}$/.test(String(i.r || '')))
+        const notLoaded = imgs.filter(i => !(i.w > 0))
+        assert('C9 正文图片 recindex 5位补零且加载成功（B-021）',
+          imgs.length >= 1 && badFmt.length === 0 && notLoaded.length === 0,
+          imgs.length === 0 ? '合成图未被提取进 MOBI'
+            : `共 ${imgs.length} 图：${badFmt.length} 个格式错(${badFmt.map(i => JSON.stringify(i.r)).slice(0, 3).join(',')}) ${notLoaded.length} 个未加载`)
       }
     }
 

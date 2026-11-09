@@ -555,11 +555,27 @@ B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令�
 - **验证**：`npm run build`（含组件 bundle）通过；`npm run smoke` **93/93 项全过（0 失败 0 跳过）**，L4 B/C 段全绿；转换产物存 `.smoke-report/smoke-subtitle-e2e.pdf / .mobi` 供人工复核
 - **待真机**：B-020 / V-002 剩原始样本 PDF + Kindle/文石真机复核；R-096 修复随 v0.8.2 组件发布才对存量用户生效（旧组件装入新应用不报错但转换仍坏，见 D-036 兼容边界）
 
+### 10. v0.8.2 用户真机反馈四项处理（2026-11-09，B-020 闭环 + 三修一登记）
+
+来源：`~/文档/Obsidian Vault/doclite V 0.8.2版本问题_20261109.md`。
+
+- **B-020 闭环**：用户真机确认 MOBI 英文副标题已消失 → B-020/V-002 标已修 v0.8.2
+- **B-021 转 MOBI 正文图片全部消失只剩封面——双根因，均已修**：
+  1. **recindex 未按 MOBI 规范 5 位补零**（Kindle/文石不认 `<img recindex="1">` 只认 `"00001"`；封面走 EXTH coverOffset 二进制字段故幸存）。排查路径：先对比产物二进制（结构与真机验证过的 v11 产物、calibre 官方转换完全一致）→ calibre 解包对比原始正文 → 定位唯一差异 recindex 写法。历史：v8-v11 修复期的补零代码只存在于**未入库临时脚本**，converters.js 重写时丢失（git 全历史无 padStart(5)），已补回并加源码级回归检查
+  2. **DOMPurify 默认 URL 正则剥掉 blob:**：foliate `loadSection()` 把 img[recindex] 替换为本地 blob: URL，消毒时 src 被剥 → 应用内预览同样「只剩封面」（封面不走消毒）。`ALLOWED_URI_REGEXP` 显式放行 blob:（STATE D-012 修订）
+  - 新增 **L4 C9 断言**：合成 PDF 注入真实位图 → 真实转换 → 应用预览 DOM 断言（图被提取 + recindex 5 位格式 + foliate 加载成功 naturalWidth>0）——首跑即抓出根因②
+  - 真实验证：用用户样本 PDF 经修复后组件实际转换，calibre 解出的原始正文 `<img recindex="00001"…>` 与 v11 真机验证格式逐字一致（187 图全补零）
+- **B-022 只能转 MOBI 不能转 AZW3 → 已知限制**：输出本就是 MOBI6 容器（`.mobi` 扩展名是文石/Kindle 能打开的前提，改 `.azw3` 后缀 Kindle 反而不开）；真 AZW3=KF8 需独立生成器，登记 R-107 待拍板
+- **B-023 目录被沉浸侧栏遮挡 → 已修**：目录面板标 `data-toc-panel`，热区 mousemove 加 DOM 命中测试让路（STATE D-040）
+- **B-024 macOS PDF 模糊 → 已修**：`RENDER_SCALE` 随 devicePixelRatio（≤2），canvas 缓冲与 CSS 布局解耦，高 dpr 驻留 20→12（STATE D-039）；本机 dpr=1 无法复现，V-005 登记 macOS 真机确认
+- 台账：B-020/021/023/024 闭环、B-022 已知限制、R-107/V-005 新增；**未闭环 🔴 归零**
+- 验证：`npm run smoke` **97/97**（L1 +3：recindex 补零/data-toc-panel/热区让路；L4 +1：C9）；真实样本转换探针通过
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）
 - macOS hiddenInset+vibrancy 效果待真机验证
 - H2 的 ad-hoc 重签与 .lproj 裁剪需 macOS CI/真机验证（本机 Linux 无法运行 .app）
-- v0.8.1 三项修复（B-017~B-019）：本地端到端已闭环（2026-11-07 L4 C 段），剩原始样本 PDF + Kindle/文石真机复核（B-020 / V-002）
+- B-021（图片）待用户 v0.8.3 重转后真机抽查一两章图片；B-024 清晰度待 macOS 真机确认（V-005）
 
 > AI生成

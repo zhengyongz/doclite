@@ -171,6 +171,17 @@ function layerStatic() {
   record('L1', '副标题过滤为有限窗口（postHeading = N）', hasWindow)
   record('L1', '副标题判定只挡句读（不含 ：、，）', /[。！？；]/.test(conv) && !/looksLikeTitleLine[\s\S]{0,400}?\[。！？；、，]/.test(conv))
 
+  // 图片 recindex 5 位零填充（B-021）：MOBI 规范要求，Kindle/文石严格解析；
+  // 不带补零时正文图片全部失效只剩封面（v8 修复曾因存在未入库脚本而在重写时丢失）
+  record('L1', "图片 recindex 用 padStart(5, '0') 补零",
+    /String\(item\.recindex\)\.padStart\(5,\s*'0'\)/.test(conv) && /recindex="\$\{recIdx\}"/.test(conv))
+  // 沉浸热区让路标记（B-023）：渲染器目录面板带 data-toc-panel，App 热区据此不弹侧栏遮挡
+  const app = existsSync(join(ROOT, 'src/App.jsx')) ? readFileSync(join(ROOT, 'src/App.jsx'), 'utf8') : ''
+  const azw3 = existsSync(join(ROOT, 'src/components/renderers/Azw3Renderer.jsx'))
+    ? readFileSync(join(ROOT, 'src/components/renderers/Azw3Renderer.jsx'), 'utf8') : ''
+  record('L1', 'Azw3Renderer 目录面板带 data-toc-panel 标记', /data-toc-panel/.test(azw3))
+  record('L1', 'App 热区对 [data-toc-panel] 让路', /closest\('\[data-toc-panel\]'\)/.test(app))
+
   // i18n 完整性（D-016）：关键键在 zh/en 两个字典里都存在
   const i18n = readFileSync(join(ROOT, 'src/i18n.jsx'), 'utf8')
   const keyCount = (k) => (i18n.match(new RegExp(`['\"]${k.replace(/\./g, '\\.')}['\"]\\s*:`, 'g')) || []).length

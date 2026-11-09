@@ -150,20 +150,46 @@
 
 ---
 
-### D-012 · 2026-09-21 · AZW3 渲染必须经 DOMPurify 消毒
-**决策**：`dangerouslySetInnerHTML` 渲染电子书解出的 HTML 前，一律经 DOMPurify 清洗。
+### D-012 · 2026-09-21 · AZW3 渲染必须经 DOMPurify 消毒 + 放行本地 blob: 资源
+**决策**：`dangerouslySetInnerHTML` 渲染电子书解出的 HTML 前，一律经 DOMPurify 清洗；`ALLOWED_URI_REGEXP` 显式放行 `blob:`（D-038 补充，B-021）。
 
-**背景**：恶意构造的 MOBI 可注入脚本，Electron 渲染进程会执行。
+**背景**：恶意构造的 MOBI 可注入脚本，Electron 渲染进程会执行。另：foliate 的 `loadSection()` 把正文 `img[recindex]` 解析为本地 `blob:` 图片 URL，DOMPurify 默认正则会把 src 剥掉 → 应用内预览正文图片全部消失（只剩不走消毒的封面）。
 
-**理由**：电子书内容是外部不可信输入，与普通文件不同。
+**理由**：电子书内容是不可信输入必须消毒；blob 内容全部来自应用自身解析的资源记录，无外联风险，消毒目标不是阻断本地资源。
 
 **影响面**：`src/components/renderers/Azw3Renderer.jsx`
 
-**关联**：R-045（已修）
+**关联**：R-045（已修）、B-021（已修）
 
 ---
 
 ## 三、体验与交互决策
+
+### D-039 · 2026-11-09 · PDF 预览按 devicePixelRatio 渲染（B-024）
+**决策**：`RENDER_SCALE = min(2, max(1, devicePixelRatio))`（普通屏维持 1.0 不增负担）；canvas 缓冲分辨率（RENDER_SCALE）与 CSS 布局尺寸（scale=1 的 viewport）解耦；高 dpr 下驻留 canvas 上限 20→12。
+
+**背景**：Retina（macOS 全系，dpr=2）下按 1.0 渲染再被 CSS 放大 2 倍，文字边缘明显模糊（用户对比截图实证）。
+
+**理由**：按物理像素渲染是唯一根治方法；封顶 2 与驻留减半兼顾内存（小内存 Retina 机会被 4 倍像素量压垮）。
+
+**影响面**：`src/components/renderers/PdfRenderer.jsx`
+
+**关联**：B-024（已修 v0.8.3）、V-005（macOS 真机待验）
+
+---
+
+### D-040 · 2026-11-09 · 沉浸热区遇到渲染器目录面板让路（B-023）
+**决策**：热区 `mousemove` 判定加一步 DOM 命中测试：指针悬在带 `data-toc-panel` 标记的元素上（如电子书预览的章节目录，正占着左缘 256px）时不弹出侧栏浮层。
+
+**背景**：用户反馈含目录的文件，鼠标移到目录位置时侧栏浮层跳出遮挡；左 20% 热区（B-018 用户要求）与目录面板位置重叠。
+
+**理由**：那片区域是用户正在交互的内容，优先级高于呼出侧栏；用 DOM 标记而非组件状态联动，任何渲染器只需给目录容器加 `data-toc-panel` 即可接入。
+
+**影响面**：`src/App.jsx`、`src/components/renderers/Azw3Renderer.jsx`
+
+**关联**：D-013、B-023（已修）
+
+---
 
 ### D-013 · 2026-11-05 · 沉浸热区用窗口级 mousemove，不用固定蒙层
 **决策**：删除 `fixed` 定位的 `.immersion-hotzone` 蒙层；改为监听窗口 `mousemove`，判定 `clientX <= innerWidth * 0.2` 时滑出侧栏；用 `sidebarOpenRef` 镜像状态避免高频 setState。

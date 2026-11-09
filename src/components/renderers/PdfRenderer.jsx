@@ -7,12 +7,14 @@ import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
-// 渲染比例：首次打开用 1.0（而非原来的 1.5），减少约 55% 像素量
-const RENDER_SCALE = 1.0
+// 渲染比例：按设备像素比渲染（B-024：macOS Retina dpr=2 下按 1.0 渲染、
+// 再由 CSS 放大 2 倍会明显模糊；普通屏 dpr=1 维持 1.0，不增加内存/性能负担）
+const RENDER_SCALE = Math.min(2, Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1))
 // 虚拟滚动：视口外上下各多渲染几页作为缓冲
 const BUFFER_PAGES = 1
 // canvas 駐留上限：超过后释放旧页 canvas，避免内存无限增长
-const MAX_RENDERED_PAGES = 20
+// （高 dpr 下单页像素量 4 倍，上限减半以免 Retina 机器内存吃紧）
+const MAX_RENDERED_PAGES = RENDER_SCALE > 1 ? 12 : 20
 
 export default function PdfRenderer() {
   const { currentFile, zoomLevel, setPreviewStatus, setError } = useFileStore()
@@ -43,8 +45,10 @@ export default function PdfRenderer() {
       setNumPages(pdfDoc.numPages)
 
       // 首屏优化：只取第 1 页高度确定页宽，大 PDF 不必逐页 getPage
+      // 注意：布局尺寸（CSS 像素）必须用 scale=1 的 viewport，与 canvas 缓冲
+      // 分辨率（RENDER_SCALE，见 B-024）解耦，否则高 dpr 下页面会被拉大一倍
       const firstPage = await pdfDoc.getPage(1)
-      const firstViewport = firstPage.getViewport({ scale: RENDER_SCALE })
+      const firstViewport = firstPage.getViewport({ scale: 1 })
       pageWidthRef.current = firstViewport.width
 
       // 估算每页高度：第 1 页实际高度，其余用第 1 页高度近似
