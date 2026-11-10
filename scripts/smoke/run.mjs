@@ -124,6 +124,10 @@ function precheckElectron() {
 function cleanEnv() {
   const e = { ...process.env }
   delete e.ELECTRON_RUN_AS_NODE
+  // 无显示环境（CI runner）：Chromium ozone 平台初始化要 X/Wayland，否则报
+  // 「Missing X server or $DISPLAY」直接退出——V-004 给 CI linux job 加冒烟步骤
+  // 后一直红的原因（R-119）。有显示的本地环境 DISPLAY 存在，hint 不注入、行为不变。
+  if (!e.DISPLAY && !e.WAYLAND_DISPLAY) e.ELECTRON_OZONE_PLATFORM_HINT = 'headless'
   return e
 }
 
