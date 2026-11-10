@@ -35,28 +35,29 @@
 
 | 维度 | 数量 |
 |---|---|
-| 总条目 | **144** |
-| ├ R-xxx 审查意见 | 107 |
+| 总条目 | **156** |
+| ├ R-xxx 审查意见 | 118 |
 | ├ B-xxx 用户反馈 | 24 |
 | ├ T-xxx 技术债 | 8 |
-| └ V-xxx 验证缺口 | 5 |
-| 🔴 高 | 14（+ B 段 24 项按 🔴 计） |
-| 🟡 中 | 59 |
-| ⚪ 低 | 47 |
+| └ V-xxx 验证缺口 | 6 |
+| 🔴 高 | 15（+ B 段 24 项按 🔴 计） |
+| 🟡 中 | 64 |
+| ⚪ 低 | 53 |
 
 | 状态 | 数量 |
 |---|---|
-| 已修 | 79 |
-| 已知限制 | 7 |
-| **未闭环（待修 56 + 待验 2）** | **58** |
+| 已修 | 89 |
+| 已知限制 | 8 |
+| **未闭环（待修 56 + 待验 3）** | **59** |
 
-**未闭环分布**：🔴 0 · 🟡 31 · ⚪ 27
+**未闭环分布**：🔴 0 · 🟡 32 · ⚪ 27
 
 ### 未闭环高优先级（当前 0 项）
 
 > 2026-11-09：B-020 经用户真机复核闭环；当轮新报 B-021~B-024 三修一登记，无新增 🔴 遗留。
+> 2026-11-10：workbuddy 审查 v0.8.3 实测复现两个渲染时序缺陷（R-108 H1/R-109 M1），连同配套 8 项同轮修入；R-110 为内存取舍列已知限制。无新增 🔴 未闭环。
 
-### 未闭环中优先级（31 项，按主题归类）
+### 未闭环中优先级（32 项，按主题归类）
 
 | 主题 | 条目 | 数量 |
 |---|---|---|
@@ -64,7 +65,7 @@
 | Markdown 查看功能 | R-029、R-030、R-031、R-032 | 4 |
 | 性能与内存 | R-038、R-039、R-040、R-041、R-043、R-044、R-046 | 7 |
 | 依赖与供应链 | R-053、R-054 | 2 |
-| 验证缺口 | V-003、V-005 | 2 |
+| 验证缺口 | V-003、V-005、V-006 | 3 |
 | 开发技术债 | T-001、T-002、T-003、T-005、T-006 | 5 |
 | 清理项 | R-049 | 1 |
 | v0.8.2 审查发现（worker/组件安全/测试） | R-097、R-099、R-100、R-101 | 4 |
@@ -95,6 +96,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-012 | 审查 v0.6.0 H1 | 组件 zip 三平台重复上传，zip 与 sha256 可能来自不同 job | `.github/workflows/release.yml` | 已修 | v0.7.0 | Pack converters 步骤加 `if: matrix.platform == 'linux'` |
 | R-013 | 审查 项目审查 #5 | Electron 安全加固不全：缺 sandbox / CSP / 窗口拦截 | `electron/main.cjs` | 已修 | v0.2.0 | 已开 `sandbox: true`、`setWindowOpenHandler`、`will-navigate`、index.html CSP |
 | R-096 | L4 端到端 2026-11-07 | 组件 bundle 内联的 pdfjs 与主应用是两个模块实例、从未配置 workerSrc → 应用内 PDF 转 Word/PNG/AZW3 全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`（组件拆分 v0.5.0 起即坏） | `src/utils/converters.js` + `vite.config.converters.js` + `build/pack-converters.cjs` | 已修 | v0.8.2 | worker 随组件 assets 发布（构建期复制 + 打包硬校验），方案见 STATE.md D-036；L4 C 段真实链路验证 |
+| R-108 | 审查 v0.8.3 H1 | 缩放时在途渲染把旧倍率 canvas 回填缓存，那一页永久又小又糊不自愈（实测 40 页 PDF 首轮 4/4 全中，等待 2.6s 仍驻留） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 渲染代际 genRef（缩放/换文件/dpr 变化即换代，提交前双重校验丢弃）+ dataset.renderKey 纹底重渲；方案见 STATE D-041；L4 C10 断言护网 |
 
 ---
 
@@ -148,6 +150,10 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-099 | 审查 v0.8.2 M4 | `manifest.files` 只写不校验，安装后还写成数字 | `electron/converters-component.cjs:137-165,335` | 待修 | — | 校验清单与键集合一致；写回保留数组或改 `fileCount` |
 | R-100 | 审查 v0.8.2 M5 | `assets/../converters.js` 可绕过脚本哈希覆盖（`..` 归一化） | `electron/converters-component.cjs:55-60,231` | 待修 | — | 拒绝 `.`/`..` 段 + 归一目标去重 + 受保护文件最后写 |
 | R-101 | 审查 v0.8.2 M1+M6 | L4 C2 空断言；CI 不跑 L4/xvfb，R-096 类缺陷无回归门禁 | `integration-app.cjs:348`、`ci.yml` | 待修 | — | CI worker 存在性门禁已在 v0.8.2 完成；余：去 C2 短路 + xvfb L4 |
+| R-109 | 审查 v0.8.3 M1 | 缩放按比例保持滚动位置是空操作：zoomRef 渲染期就更新，effect 读 oldZ 恒等于新值（实测 ratio=1.000 应 1.2，连点放大三次漂移 ≈3 页） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 渲染期只做纯派生，补偿用 appliedRef 真实旧值（实测 2061→2473 比例 1.200）；见 STATE D-041；L4 C11 断言护网 |
+| R-110 | 审查 v0.8.3 M2 | dpr=2 时 zoom≥150% 被封顶 3 压回 0.75，「任意缩放不糊」注释/说明失真 | `PdfRenderer.jsx` | 已知限制 | — | 取舍写入 D-039（约144MB vs 256MB 峰值）；提高到 MAX=4+驻留 4~5 换页数留 0.9.0 评估 |
+| R-111 | 审查 v0.8.3 M3 | `DPR` 模块级常量只读一次：Retina→外接 1080p 换屏/改系统缩放后清晰度修复失效 | `PdfRenderer.jsx` | 已修 | v0.8.3 | dpr 改 state + matchMedia 监听，变化即按新 targetScale 重渲；见 STATE D-041 |
+| R-112 | 审查 v0.8.3 M4 | 无任何缩放行为自动化测试，H1/M1 因此逸过 97/97 全绿 | `integration-app.cjs` | 已修 | v0.8.3 | 新增 L4 D 段：合成多页 PDF→滚中段→连点两次放大→断言缓冲倍率/显示宽度/滚动比例（C10/C11） |
 
 ---
 
@@ -202,6 +208,12 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-105 | 审查 v0.8.2 L7+L8 | smoke 触发真实 GitHub 请求；release.yml job 级 `contents: write` 仍在 | `integration-app.cjs`、`release.yml` | 待修 | — | `registerUpdater` 加 `autoCheck` 开关；上传拆独立 job |
 | R-106 | 审查 v0.8.2 L9 | `pack-converters.cjs` 对 `assets/**` 递归收任意文件，未来 Vite 吐字体/图片会悄悄进包 | `build/pack-converters.cjs:32-44` | 待修 | — | 只收 `pdf.worker.min.mjs` 或按扩展名白名单（.mjs/.js/.wasm） |
 | R-107 | 用户反馈 B-022 | 真 AZW3(KF8) 输出未实现（当前为 MOBI6 容器 + .mobi 扩展名） | `src/utils/mobiWriter.js` | 待修 | — | KF8 需 skeleton/FDST/RESC/双 MOBI 结构，工作量独立成轮；Kindle/文石对 MOBI6 支持完好；是否值得做待用户拍板（0.9.0 评估） |
+| R-113 | 审查 v0.8.3 L1 | DEVLOG 第 10 节仍描述 dpr 初版方案（RENDER_SCALE 随 dpr、驻留 20→12），实际已是按缩放重渲 + 动态 8/12/20 | `DEVLOG.md` | 已修 | v0.8.3 | 第 10 节改为最终实现，另补第 11 节记录本轮审查修复 |
+| R-114 | 审查 v0.8.3 L2 | 画布固定 px 宽只有父级 maxWidth，窗口窄于页面时横向溢出出滚动条 | `PdfRenderer.jsx` | 已修 | v0.8.3 | canvas 加 `maxWidth:100%`，窄窗收缩到容器宽 |
+| R-115 | 审查 v0.8.3 L3 | elementFromPoint 在 mousemove 高频（贴边拖动 60~120Hz）强制样式/布局计算 | `src/App.jsx` | 已修 | v0.8.3 | 各件打开态跳过命中测试只保持打开（语义不变），见 STATE D-040 修订 |
+| R-116 | 审查 v0.8.3 L7 | 换文件旧 `pdfDoc` 只被覆盖引用，无 destroy（预存在） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 换文件与卸载时 `pdfDoc.destroy()`；换文件同时换代作废旧文档在途渲染 |
+| R-117 | 审查 v0.8.3 L8 | 驻留驱逐按页号最小优先：向上滚动恰好先删即将进入视口的页，小驻留上限（8）下来回重渲（预存在） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 驱逐改「离可见区最远优先」+ 释放前置零 canvas 尺寸 |
+| R-118 | 审查 v0.8.3 L5+L6 | C9 靠固定 350ms 等待判 naturalWidth，慢机假红；L1 正则绑死变量名，改名即误红 | `integration-app.cjs`、`run.mjs` | 已修 | v0.8.3 | C9 改图片解码轮询（100ms×5 最多 2s）；L1 放宽为只认 padStart(5) 写法，产物侧由 C9 守护 |
 
 ---
 
@@ -232,7 +244,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | B-021 | 2026-11-09 | 转 MOBI 后正文图片全部消失只剩封面（真机/应用内均复现） | `src/utils/converters.js` + `Azw3Renderer.jsx` | 已修 | v0.8.3 | 双根因：① `<img recindex>` 未按 MOBI 规范 5 位补零（Kindle/文石不认；v8 修复曾存在未入库脚本，converters 重写时丢失）；② DOMPurify 默认正则剥掉 foliate 生成的 blob: img src（应用内预览无图）。L4 C9 断言护网（提取+补零+加载全链） |
 | B-022 | 2026-11-09 | 只能转 MOBI 不能转 AZW3 | `src/utils/converters.js` | 已知限制 | — | 输出本就是 MOBI6 容器（.mobi 扩展名是文石/Kindle 能开的前提）；真 AZW3=KF8 需独立生成器，见 R-107 |
 | B-023 | 2026-11-09 | 含目录文件，鼠标移到目录位置被沉浸侧栏浮层遮挡 | `src/App.jsx` + `Azw3Renderer.jsx` | 已修 | v0.8.3 | 目录面板标 `data-toc-panel`，热区 mousemove 做 DOM 命中测试让路 |
-| B-024 | 2026-11-09 | macOS 打开 PDF 清晰度低（Retina 模糊） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 渲染 scale 随 devicePixelRatio（≤2），canvas 缓冲与 CSS 布局解耦；真机确认见 V-005 |
+| B-024 | 2026-11-09 | macOS 打开 PDF 清晰度低（Retina 模糊；后续确认 Linux 同现、全平台同因） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 按「缩放×dpr」重新渲染（废弃 CSS transform 拉伸），封顶 3 的取舍见 D-039/R-110；审查发现的渲染时序双缺陷 R-108/R-109、dpr 动态响应 R-111 一并修入；真机确认见 V-005/V-006 |
 
 ---
 
@@ -259,7 +271,8 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | V-002 | 三项问题修复仅单元样例验证，无源 PDF 端到端 | B-017 的真实闭环未确认 | 已修 | v0.8.2 | 2026-11-09 用户真机样本确认（英文副标题已消失）；本地 L4 C 段 2026-11-07 已过 |
 | V-003 | macOS `ad-hoc` 重签与 `.lproj` 裁剪未在 macOS CI/真机验证 | macOS 产物正确性未知 | 待验 | — |
 | V-004 | CI 不跑冒烟，只验构建 | 功能坏掉要等发版才暴露 | 已修 | v0.8.2 | ci.yml 的 linux job 加 `Smoke test (L1-L3)` 步骤 |
-| V-005 | B-024 的 retina 渲染修复未在 macOS 真机验证 | macOS 清晰度实际效果未知 | 待验 | 需 macOS 真机（本机 Linux dpr=1 无法复现） |
+| V-005 | B-024 的 retina 渲染修复未在 macOS 真机验证 | macOS 清晰度实际效果未知 | 待验 | 需 macOS 真机（本机 Linux dpr=1 时无法复现；Linux 200% 缩放机 dpr=2 已由 L4 C10 实证缓冲=物理像素） |
+| V-006 | PDF 缩放后未逐页目视确认无「大小不一/留边缝」 | R-108 陈旧画布的用户可见形态（页面比占位窄、居中留缝） | 待验 | 用户升级 v0.8.3 后在不同缩放档位翻几页确认；L4 C10 已在自动化层守护 |
 
 ---
 

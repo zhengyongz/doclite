@@ -172,9 +172,11 @@ function layerStatic() {
   record('L1', '副标题判定只挡句读（不含 ：、，）', /[。！？；]/.test(conv) && !/looksLikeTitleLine[\s\S]{0,400}?\[。！？；、，]/.test(conv))
 
   // 图片 recindex 5 位零填充（B-021）：MOBI 规范要求，Kindle/文石严格解析；
-  // 不带补零时正文图片全部失效只剩封面（v8 修复曾因存在未入库脚本而在重写时丢失）
+  // 不带补零时正文图片全部失效只剩封面（v8 修复曾因存在未入库脚本而在重写时丢失）。
+  // 只查 padStart(5) 写法存在（R-118）：正则绑变量名会在改名时误红；
+  // 补零后确实写进产物由 L4 C9 的 /^\d{5}$/ 断言守护
   record('L1', "图片 recindex 用 padStart(5, '0') 补零",
-    /String\(item\.recindex\)\.padStart\(5,\s*'0'\)/.test(conv) && /recindex="\$\{recIdx\}"/.test(conv))
+    /padStart\(5,\s*'0'\)/.test(conv))
   // 沉浸热区让路标记（B-023）：渲染器目录面板带 data-toc-panel，App 热区据此不弹侧栏遮挡
   const app = existsSync(join(ROOT, 'src/App.jsx')) ? readFileSync(join(ROOT, 'src/App.jsx'), 'utf8') : ''
   const azw3 = existsSync(join(ROOT, 'src/components/renderers/Azw3Renderer.jsx'))

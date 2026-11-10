@@ -428,9 +428,21 @@ p { margin: 5px 0; }
             const getText = () => { const el = document.querySelector('.ebook-content'); return el ? el.innerText : '' }
             const collectImgs = () => Array.from(document.querySelectorAll('.ebook-content img')).forEach(i =>
               imgs.push({ r: i.getAttribute('recindex'), w: i.naturalWidth }))
+            // 等当前章节图片全部解码完成（R-118/L5：固定 350ms 在慢机上不够，
+            // naturalWidth 读到 0 会假红）；空章节立即通过，超过 2s 放行收集
+            const waitImgs = async () => {
+              const t0 = Date.now()
+              while (Date.now() - t0 < 2000) {
+                const cur = Array.from(document.querySelectorAll('.ebook-content img'))
+                if (cur.every(x => x.complete && x.naturalWidth > 0)) return true
+                await new Promise(r => setTimeout(r, 100))
+              }
+              return false
+            }
             const findNext = () => Array.from(document.querySelectorAll('button')).filter(b => /下一章|Next/.test(b.textContent || ''))[0]
             for (let i = 0; i < 20; i++) {
               await new Promise(r => setTimeout(r, 350))
+              await waitImgs()
               texts.push(getText())
               collectImgs()
               const next = findNext()
@@ -485,6 +497,129 @@ p { margin: 5px 0; }
           imgs.length === 0 ? '合成图未被提取进 MOBI'
             : `共 ${imgs.length} 图：${badFmt.length} 个格式错(${badFmt.map(i => JSON.stringify(i.r)).slice(0, 3).join(',')}) ${notLoaded.length} 个未加载`)
       }
+    }
+
+    // ================= D 段：PDF 预览缩放行为（B-024 / R-108 / R-109）=================
+    // v0.8.3 审查实测两个渲染时序缺陷：①缩放时在途渲染把旧倍率 canvas 回填缓存
+    // （H1/R-108，那一页又小又糊且永不自愈）；②滚动位置补偿因 ref 在渲染期被更新
+    // 而恒为空操作（M1/R-109，放大后阅读位置漂移 ≈1.3 页）。修复=渲染代际保护 +
+    // effect 内用真实旧值补偿。这里用合成多页 PDF 走「滚到中段 → 连点两次放大 →
+    // 等收敛」，断言缓冲倍率/显示宽度/滚动位置（R-112 回归网）。
+    try {
+      // 8 页 A4：单页高 > 视口高，100% 也可以滚动；连点两次放大正是 H1 的
+      // 真实触发节奏（第二击落在第一击的重渲在途期）
+      const zoomPdfHtml = `<html><head><meta charset="utf-8"><style>
+body { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK', sans-serif; margin: 24px; }
+.pg { min-height: 92vh; page-break-after: always; }
+      </style></head><body>${Array.from({ length: 8 }, (_, i) =>
+        `<div class="pg"><p style="font-size:30px;font-weight:700">缩放测试 第${i + 1}页</p><p style="font-size:12px">缩放行为回归网占位正文。</p></div>`
+      ).join('')}</body></html>`
+      let zoomPdfBuf = null
+      try {
+        const zw = new BrowserWindow({ show: false })
+        try {
+          await zw.loadURL('data:text/html;charset=utf-8;base64,' + Buffer.from(zoomPdfHtml, 'utf8').toString('base64'))
+          await zw.webContents.executeJavaScript('document.fonts.ready.then(() => true)')
+          zoomPdfBuf = await zw.webContents.printToPDF({ pageSize: 'A4', printBackground: false })
+        } finally {
+          zw.destroy()
+        }
+      } catch (e) {
+        console.log('[smoke] 合成缩放 PDF 失败:', e.message)
+      }
+
+      if (zoomPdfBuf) {
+        fs.writeFileSync(path.join(REPORT_DIR, 'smoke-zoom-e2e.pdf'), zoomPdfBuf)
+        await openFileInApp(path.join(REPORT_DIR, 'smoke-zoom-e2e.pdf'), 'smoke-zoom-e2e.pdf')
+        const pdfReady = await waitFor(
+          "document.querySelectorAll('[data-pdf-page] canvas').length >= 2",
+          { timeout: 20000, label: 'D 段 PDF canvas' })
+
+        // 读缩放态：zoom 从工具栏百分比标签读（随 i18n 语言无关），scrollTop 从滚动容器读
+        const readZoomState = () => withTimeout(win.webContents.executeJavaScript(`
+          (() => {
+            const zin = Array.from(document.querySelectorAll('button')).find(b => /放大|Zoom in/i.test(b.getAttribute('aria-label') || ''))
+            const lbl = zin && zin.parentElement ? zin.parentElement.querySelector('span') : null
+            const z = lbl ? parseInt(String(lbl.textContent).replace(/[^0-9]/g, ''), 10) : NaN
+            const el = document.querySelector('[data-pdf-scroll]')
+            return {
+              zoom: isNaN(z) ? null : z,
+              scrollTop: el ? Math.round(el.scrollTop) : -1,
+              dpr: window.devicePixelRatio || 1,
+              canvases: Array.from(document.querySelectorAll('[data-pdf-page] canvas')).map(c => ({
+                w: c.width, sw: parseFloat(c.style.width) || 0,
+              })),
+            }
+          })()
+        `), 8000, 'D 段读态').catch(() => null)
+
+        const clickZoomIn = () => withTimeout(win.webContents.executeJavaScript(`
+          (() => {
+            const b = Array.from(document.querySelectorAll('button')).find(x => /放大|Zoom in/i.test(x.getAttribute('aria-label') || ''))
+            if (b && !b.disabled) b.click()
+            return !!b
+          })()
+        `), 5000, 'D 段点放大').catch(() => false)
+
+        const st0 = await readZoomState()
+        assert('C10 前置：多页 PDF 预览渲染且初始缩放 100%',
+          !!(pdfReady && st0 && st0.zoom === 100 && st0.canvases.length >= 2),
+          `canvas=${pdfReady ? '≥2' : '未渲染'} 初始缩放=${st0 ? st0.zoom + '%' : '?'} dpr=${st0 ? st0.dpr : '?'}`)
+
+        if (pdfReady && st0 && st0.zoom === 100 && st0.canvases.length >= 2) {
+          // 页面基础宽（scale=1）：100% 时 canvas css 宽 = 基础宽（合成 PDF 各页同宽）
+          const baseW = st0.canvases.reduce((s, c) => s + c.sw, 0) / st0.canvases.length
+          // 期望建立倍率：与 PdfRenderer 同式（dpr 失取 [1,2]，乘 zoom 后封顶 3）
+          const expScale = (st) => {
+            const d = Math.min(2, Math.max(1, st.dpr || 1))
+            return Math.min(3, Math.max(1, d * (st.zoom / 100)))
+          }
+          // 收敛判定：显示宽 = baseW×zoom（±3%）、缓冲/显示 = scale/zoom（±0.08）
+          const converged = (st) => !!(st && st.zoom && st.canvases.length >= 2
+            && st.canvases.every(c => c.sw > 0
+              && Math.abs(c.sw - baseW * st.zoom / 100) / (baseW * st.zoom / 100) < 0.03
+              && Math.abs(c.w / c.sw - expScale(st) / (st.zoom / 100)) < 0.08))
+
+          // 滚到 30%（触发新页渲染，模拟真实阅读位置），等 100% 档初始收敛
+          await withTimeout(win.webContents.executeJavaScript(
+            "(() => { const el = document.querySelector('[data-pdf-scroll]'); if (el) el.scrollTop = el.scrollHeight * 0.3; return true })()"
+          ), 5000, 'D 段滚动').catch(() => {})
+          const settle = async (timeout = 8000) => {
+            const t0 = Date.now()
+            let st = null
+            while (Date.now() - t0 < timeout) {
+              st = await readZoomState()
+              if (converged(st)) break
+              await sleep(150)
+            }
+            return st
+          }
+          const stA = await settle()
+          const scrollBefore = stA ? stA.scrollTop : -1
+          const zoomBefore = stA ? stA.zoom : 0
+
+          // 连点两次放大（100→110→120）：第二击落在第一击的重渲在途期，正是 H1 真实触发节奏
+          await clickZoomIn()
+          await sleep(150)
+          await clickZoomIn()
+          const stB = await settle()
+
+          assert('C10 缩放重渲：canvas 缓冲倍率与显示宽度随缩放更新，无旧倍率残留（B-024/R-108）',
+            converged(stB) && stB && stB.zoom > zoomBefore,
+            stB
+              ? `zoom=${zoomBefore}%→${stB.zoom}% 缓冲/显示=${stB.canvases.map(c => (c.w / c.sw).toFixed(2)).join(',')}（期望 ${(expScale(stB) / (stB.zoom / 100)).toFixed(2)}）`
+              : '读态失败')
+
+          const ratio = stB && scrollBefore > 0 ? stB.scrollTop / scrollBefore : 0
+          const expectRatio = stB ? stB.zoom / zoomBefore : 1
+          assert('C11 缩放按比例保持滚动位置（R-109）',
+            scrollBefore > 0 && Math.abs(ratio - expectRatio) <= 0.03,
+            `scrollTop ${scrollBefore}→${stB ? stB.scrollTop : '?'} 比例 ${ratio.toFixed(3)}（期望 ${expectRatio.toFixed(3)}）`)
+        }
+      }
+    } catch (e) {
+      console.log('[smoke] D 段失败:', e && e.stack ? e.stack : String(e))
+      results.push({ name: 'D 段 PDF 缩放行为无异常', ok: false, detail: String(e && e.message ? e.message : e) })
     }
 
     // ---------- A16 渲染层无未捕获异常 ----------

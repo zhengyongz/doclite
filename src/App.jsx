@@ -96,13 +96,19 @@ function AppBody() {
     if (!immersive) return
     const onMove = (e) => {
       if (e.clientX > window.innerWidth * 0.2) return
+      // 侧栏已打开时跳过命中测试（R-115：elementFromPoint 每次 mousemove 都强制
+      // 样式/布局计算，贴边拖动时 60~120Hz；打开态唯一要做的就是保持不收起）
+      if (sidebarOpenRef.current) {
+        cancelHide()
+        return
+      }
       // B-023：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，左缘 256px）
       // 时，这片区域是用户正在交互的内容，侧栏浮层不应弹出遮挡 → 让路。
       // 用 DOM 命中测试而非组件状态：任何渲染器只需给目录容器标 data-toc-panel 即可接入。
       const el = document.elementFromPoint(e.clientX, e.clientY)
       if (el && el.closest && el.closest('[data-toc-panel]')) return
       cancelHide()
-      if (!sidebarOpenRef.current) setSidebarOpen(true)
+      setSidebarOpen(true)
     }
     window.addEventListener('mousemove', onMove, { passive: true })
     return () => window.removeEventListener('mousemove', onMove)
