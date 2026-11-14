@@ -157,7 +157,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-112 | 审查 v0.8.3 M4 | 无任何缩放行为自动化测试，H1/M1 因此逸过 97/97 全绿 | `integration-app.cjs` | 已修 | v0.8.3 | 新增 L4 D 段：合成多页 PDF→滚中段→连点两次放大→断言缓冲倍率/显示宽度/滚动比例（C10/C11） |
 | R-119 | 发版排查 2026-11-10 | CI linux job 的冒烟步骤（V-004）自加入以来从未绿过：runner 无 X/Wayland，Electron ozone 初始化退出（Missing X server）→ L3 必红 | `scripts/smoke/run.mjs` cleanEnv | 已修 | v0.8.3 | 无显示环境自动注入 `ELECTRON_OZONE_PLATFORM_HINT=headless`（本地有显示不受影响）；两种环境 L1-L3 均 69/69 实测 |
 | R-120 | 用户反馈 v0.8.3 Win | 鼠标移到左边缘滑出侧栏，已打开文件的目录面板被侧栏遮挡，无法点击目录（低分辨率屏幕更明显；审查 L4 边界） | `src/App.jsx` | 已修 | v0.8.4 | 侧栏已打开态命中测试：指针悬在 data-toc-panel 上即收起让位（收起态悬目录不弹已是 B-023）；命中仍限 x≤20% 热区 |
-| R-121 | 用户反馈 v0.8.3 Win | Windows 打开 PDF 100% 不清晰、150% 反而清晰（与 B-024「越放大越糊」相反）——疑似 Windows 高分屏/兼容缩放下 devicePixelRatio 读到 1 而 OS 已放大窗口，canvas 缓冲 < 显示物理像素 | `PdfRenderer.jsx` + `electron/main.cjs` + `preload.cjs` | 已修 | v0.8.4 | 用主进程 screen.scaleFactor 校准 dpr（取 max(devicePixelRatio, scaleFactor)），并加启动诊断 log；待 Windows 真机 V-007 确认 |
+| R-121 | 用户反馈 v0.8.3 Win | Windows 打开 PDF 100% 不清晰、150% 反而清晰（与 B-024「越放大越糊」相反） | `PdfRenderer.jsx` | 待确认 | — | 排查结论：①用户系统缩放 100%（无 OS 放大）→ 排除 dpr 与 scaleFactor 错位；②本地 `--force-device-scale-factor=1` 实证 PDF 1x 渲染锐利（截图复核）→ 排除渲染管线。疑为被测 PDF 本身是低分辨率扫描/位图。**V-007 请用纯文字 PDF（如 Word 转 PDF）在 Windows 100% 复测确认**；仍糊再查环境（字体/驱动/缩放） |
 
 ---
 
@@ -277,7 +277,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | V-004 | CI 不跑冒烟，只验构建 | 功能坏掉要等发版才暴露 | 已修 | v0.8.2 | ci.yml 的 linux job 加 `Smoke test (L1-L3)` 步骤 |
 | V-005 | B-024 的 retina 渲染修复未在 macOS 真机验证 | macOS 清晰度实际效果未知 | 待验 | 需 macOS 真机（本机 Linux dpr=1 时无法复现；Linux 200% 缩放机 dpr=2 已由 L4 C10 实证缓冲=物理像素） |
 | V-006 | PDF 缩放后未逐页目视确认无「大小不一/留边缝」 | R-108 陈旧画布的用户可见形态（页面比占位窄、居中留缝） | 待验 | 用户升级 v0.8.3 后在不同缩放档位翻几页确认；L4 C10 已在自动化层守护 |
-| V-007 | Windows 真机：R-121 的 100% 模糊度 + R-120 侧栏目录遮挡 | Windows 缩放下 PDF 清晰度与侧栏交互未知 | 待验 | 用户 Windows 装 v0.8.4 实测：①开 PDF 100% 是否清晰（对照诊断 log 的 devicePixelRatio/scaleFactor）；②开含目录文件后把侧栏移开再点目录 |
+| V-007 | Windows 真机：R-121 的 100% 模糊是「内容低清」还是「渲染问题」+ R-120 侧栏目录遮挡 | 需区分 PDF 内容与渲染两条线 | 待验 | 用**纯文字 PDF**（Word/PPT 导出或小岛经济学 PDF）在 Windows 100% 打开：清晰→原糊 PDF 系低分辨率扫描/位图，非应用问题；仍糊→报环境信息（显示器分辨率/缩放/驱动）继续查。侧栏遮挡按 R-120 修复随 v0.8.4 验证 |
 
 ---
 

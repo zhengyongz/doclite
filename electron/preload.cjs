@@ -18,10 +18,6 @@ contextBridge.exposeInMainWorld('doclite', {
   // 用系统默认浏览器打开 http/https 外链（MD 文档内链接点击；主进程白名单校验）
   openExternal: (url) => ipcRenderer.invoke('doclite:open-external', url),
 
-  // 主进程读 OS 对主显示的真实缩放因子（scaleFactor），供渲染层校准 canvas 渲染倍率：
-  // Windows 高分屏/兼容缩放下 devicePixelRatio 可能读到 1，渲染层用 max(dpr, scaleFactor)
-  getScaleFactor: () => ipcRenderer.invoke('app:get-scale-factor'),
-
   // ---------- 自动升级 ----------
   // 当前应用版本号（侧边栏"版本信息"展示用）
   getVersion: () => ipcRenderer.invoke('app:get-version'),

@@ -590,9 +590,9 @@ B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令�
 来源：用户真机反馈（Obsidian `Doclite v 0.8.3问题.md`）。
 
 - **macOS V-005 清晰度、B-021 图片**：用户确认已完成 ✓
-- **R-121（Windows 100% 模糊）**：与 B-024 相反（100% 糊、150% 反而清晰）——疑似 Windows 高分屏/兼容缩放下 `devicePixelRatio` 读到 1 而 OS 已把窗口内容按 1.x 放大，导致 100% 时 canvas 缓冲 < 显示物理像素。修复：主进程 `screen.getPrimaryDisplay().scaleFactor` 经 `app:get-scale-factor` IPC 暴露，PdfRenderer 生效 dpr 取 `max(devicePixelRatio, scaleFactor)`（各平台无副作用），并加启动诊断 log。**推测性修复，V-007 Windows 真机确认**：需用户反馈 Windows「设置→显示→缩放」百分比 + 诊断 log 数值对照
+- **R-121（Windows 100% 模糊）**：先疑 dpr 与系统缩放错位，加了 `screen.scaleFactor` 校准 + 诊断 log；但用户反馈系统缩放 100%（无 OS 放大）+ 本地 `--force-device-scale-factor=1` 实证 PDF 1x 渲染锐利（截图复核）→ **判定非渲染问题，scaleFactor 校准已回退**。疑为被测 PDF 本身是低分辨率扫描/位图（100% 显示原样、150% 放大后字体更大「主观清晰」）。待用户用纯文字 PDF 在 Windows 100% 复测确认（V-007）；仍糊再查环境
 - **R-120（Windows 侧栏遮挡目录）**：侧栏已打开态做命中测试，指针悬 `data-toc-panel` 上即收起让位（收起态不弹已是 B-023）；命中仍限 x≤20% 热区。确定性修复
-- 台账：R-120/R-121 + V-007；**冒烟 100/100**（B 段沉浸交互、D 段 C10/C11 均绿）
+- 台账：R-120（已修）+ R-121（待确认）+ V-007；**冒烟 100/100**（B 段沉浸交互、D 段 C10/C11 均绿）
 
 ### 遗留
 
