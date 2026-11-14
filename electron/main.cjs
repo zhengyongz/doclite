@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { registerUpdater } = require('./updater.cjs')
@@ -115,6 +115,19 @@ function createWindow() {
 
 // IPC：当前应用版本号（侧边栏"版本信息"展示用）
 ipcMain.handle('app:get-version', () => app.getVersion())
+
+// IPC：渲染层拉取操作系统对主显示的真实缩放因子（R-121/Windows 100% 模糊排查）。
+// Chromium 的 window.devicePixelRatio 在某些 Windows 高分屏/兼容缩放下会读到 1，
+// 而 OS 已把窗口内容按 1.x 放大，导致 canvas 缓冲 < 显示物理像素 → 100% 就模糊。
+// 用主进程 screen.scaleFactor 作校准真值（渲染层取 max(devicePixelRatio, scaleFactor)）。
+// screen API 需 app ready 后才能调用；invoke 发生在渲染层启动后，天然已 ready。
+ipcMain.handle('app:get-scale-factor', () => {
+  try {
+    return screen.getPrimaryDisplay().scaleFactor || 1
+  } catch {
+    return 1
+  }
+})
 
 // IPC：用系统默认浏览器打开外链（MdRenderer 文档内 http/https 链接）
 // 安全：仅放行 http/https 白名单，拒绝 file:/javascript: 等自定义 scheme（workbuddy M3）

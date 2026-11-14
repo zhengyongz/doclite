@@ -33,7 +33,13 @@ export default function PdfRenderer() {
   const [loading, setLoading] = useState(true)
   // dpr 响应换屏/系统缩放变更（R-111）：旧实现模块加载时读一次，Retina↔外接屏切换后
   // 清晰度修复失效；改用 state + matchMedia 监听
-  const [dpr, setDpr] = useState(() => clampDpr(typeof window !== 'undefined' ? window.devicePixelRatio : 1))
+  // 设备像素比双源：Chromium devicePixelRatio + 主进程 screen.scaleFactor（R-121）。
+  // Windows 高分屏/兼容缩放下 devicePixelRatio 可能读到 1 而 OS 已把窗口内容放大，
+  // 导致 canvas 缓冲 < 显示物理像素 → 100% 模糊。生效 dpr 取两者 max（OS 真值优先）；
+  // scaleFactor 拿不到时退回 devicePixelRatio（各平台行为不变）。
+  const [devDpr, setDevDpr] = useState(() => (typeof window !== 'undefined' ? window.devicePixelRatio : 1))
+  const [sf, setSf] = useState(null)
+  const dpr = clampDpr(Math.max(devDpr, sf || 0))
 
   // 渲染期只做纯派生（R-109 教训：渲染期写 ref 会让「按真实旧值补偿滚动」拿到新值，
   // oldZ === newZ、补偿恒为空操作）。ref 统一在下方 applyRef effect 里写。
@@ -53,12 +59,21 @@ export default function PdfRenderer() {
   const scaleRef = useRef(1)
   const appliedRef = useRef(null) // 上次已应用的 { z, scale }
 
+  // devicePixelRatio 变化（换屏/改系统缩放）监听；启动时拉一次主进程 scaleFactor 校准
   useEffect(() => {
     const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
-    const onChange = () => setDpr(clampDpr(window.devicePixelRatio))
+    const onChange = () => setDevDpr(window.devicePixelRatio)
     mq.addEventListener('change', onChange)
+    window.doclite?.getScaleFactor?.().then(v => {
+      if (typeof v === 'number' && v > 0) setSf(v)
+    }).catch(() => {})
     return () => mq.removeEventListener('change', onChange)
-  }, [dpr])
+  }, [])
+
+  // 诊断（R-121）：记录最终生效倍率与两个来源，供 Windows 模糊排查对照
+  useEffect(() => {
+    console.log(`[PdfRenderer] platform=${window.doclite?.platform || '?'} devicePixelRatio=${devDpr} scaleFactor=${sf || 'n/a'} → dpr=${dpr}`)
+  }, [devDpr, sf, dpr])
 
   // 1. 加载 PDF，取每页基础尺寸（scale=1，不渲染）
   const loadPdf = useCallback(async () => {

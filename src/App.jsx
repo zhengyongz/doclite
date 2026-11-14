@@ -96,17 +96,19 @@ function AppBody() {
     if (!immersive) return
     const onMove = (e) => {
       if (e.clientX > window.innerWidth * 0.2) return
-      // 侧栏已打开时跳过命中测试（R-115：elementFromPoint 每次 mousemove 都强制
-      // 样式/布局计算，贴边拖动时 60~120Hz；打开态唯一要做的就是保持不收起）
+      // B-023/R-121：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，
+      // 左缘 256px）时，这片区域是用户正在交互的内容，侧栏不得遮挡 →
+      //   · 收起态：不弹出（B-023）
+      //   · 已打开态：立即收起让位，用户能直接点目录（R-121，Windows 低分辨率实测遮挡）
+      // 命中测试只限定在 x≤20% 热区内执行（R-115 保留的节流边界）
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const onToc = !!(el && el.closest && el.closest('[data-toc-panel]'))
       if (sidebarOpenRef.current) {
         cancelHide()
+        if (onToc) setSidebarOpen(false) // 悬目录即收起，把目录区让给用户
         return
       }
-      // B-023：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，左缘 256px）
-      // 时，这片区域是用户正在交互的内容，侧栏浮层不应弹出遮挡 → 让路。
-      // 用 DOM 命中测试而非组件状态：任何渲染器只需给目录容器标 data-toc-panel 即可接入。
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (el && el.closest && el.closest('[data-toc-panel]')) return
+      if (onToc) return
       cancelHide()
       setSidebarOpen(true)
     }

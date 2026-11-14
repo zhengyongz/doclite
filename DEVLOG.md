@@ -585,6 +585,15 @@ B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令�
 - 附带发现（R-119）：推 master 后发现 CI linux job 冒烟步骤自 V-004 加入以来从未绿过（fa4ae9f/2fdc801 两轮均红）——runner 无 X/Wayland，Electron ozone 初始化退出。修复：cleanEnv 无显示环境自动注入 `ELECTRON_OZONE_PLATFORM_HINT=headless`
 - 验证：`npm run smoke` **100/100**（L4 +3：C10 前置/C10/C11，全部真实数据非空过）；L1-L3 无显示环境 69/69（CI 条件复现）与有显示环境均绿
 
+### 12. v0.8.3 真机确认（macOS/B-021）+ Windows 两问（2026-11-13）
+
+来源：用户真机反馈（Obsidian `Doclite v 0.8.3问题.md`）。
+
+- **macOS V-005 清晰度、B-021 图片**：用户确认已完成 ✓
+- **R-121（Windows 100% 模糊）**：与 B-024 相反（100% 糊、150% 反而清晰）——疑似 Windows 高分屏/兼容缩放下 `devicePixelRatio` 读到 1 而 OS 已把窗口内容按 1.x 放大，导致 100% 时 canvas 缓冲 < 显示物理像素。修复：主进程 `screen.getPrimaryDisplay().scaleFactor` 经 `app:get-scale-factor` IPC 暴露，PdfRenderer 生效 dpr 取 `max(devicePixelRatio, scaleFactor)`（各平台无副作用），并加启动诊断 log。**推测性修复，V-007 Windows 真机确认**：需用户反馈 Windows「设置→显示→缩放」百分比 + 诊断 log 数值对照
+- **R-120（Windows 侧栏遮挡目录）**：侧栏已打开态做命中测试，指针悬 `data-toc-panel` 上即收起让位（收起态不弹已是 B-023）；命中仍限 x≤20% 热区。确定性修复
+- 台账：R-120/R-121 + V-007；**冒烟 100/100**（B 段沉浸交互、D 段 C10/C11 均绿）
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）

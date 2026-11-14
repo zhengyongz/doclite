@@ -102,6 +102,9 @@ app.whenReady().then(async () => {
     // doclite:get-open-file 返回可变 payload：B/C 段靠它触发真实的文件加载路径
     // （渲染层 useOpenFileFromArgs → setFile → 沉浸态/预览渲染整个链路都是真实代码）。
     ipcMain.handle('app:get-version', () => app.getVersion())
+    ipcMain.handle('app:get-scale-factor', () => {
+      try { return require('electron').screen.getPrimaryDisplay().scaleFactor || 1 } catch { return 1 }
+    })
     let openFilePayload = null                     // null=无待打开文件；{name,size,data}
     ipcMain.handle('doclite:get-open-file', async () => openFilePayload)
     ipcMain.handle('doclite:open-external', async () => ({ ok: true }))
@@ -537,15 +540,18 @@ body { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK', sans-serif; margin: 24p
 
         // 读缩放态：zoom 从工具栏百分比标签读（随 i18n 语言无关），scrollTop 从滚动容器读
         const readZoomState = () => withTimeout(win.webContents.executeJavaScript(`
-          (() => {
+          (async () => {
             const zin = Array.from(document.querySelectorAll('button')).find(b => /放大|Zoom in/i.test(b.getAttribute('aria-label') || ''))
             const lbl = zin && zin.parentElement ? zin.parentElement.querySelector('span') : null
             const z = lbl ? parseInt(String(lbl.textContent).replace(/[^0-9]/g, ''), 10) : NaN
             const el = document.querySelector('[data-pdf-scroll]')
+            let sf = null
+            try { const v = await window.doclite.getScaleFactor(); if (typeof v === 'number' && v > 0) sf = v } catch {}
             return {
               zoom: isNaN(z) ? null : z,
               scrollTop: el ? Math.round(el.scrollTop) : -1,
               dpr: window.devicePixelRatio || 1,
+              sf,
               canvases: Array.from(document.querySelectorAll('[data-pdf-page] canvas')).map(c => ({
                 w: c.width, sw: parseFloat(c.style.width) || 0,
               })),
@@ -569,9 +575,9 @@ body { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK', sans-serif; margin: 24p
         if (pdfReady && st0 && st0.zoom === 100 && st0.canvases.length >= 2) {
           // 页面基础宽（scale=1）：100% 时 canvas css 宽 = 基础宽（合成 PDF 各页同宽）
           const baseW = st0.canvases.reduce((s, c) => s + c.sw, 0) / st0.canvases.length
-          // 期望建立倍率：与 PdfRenderer 同式（dpr 失取 [1,2]，乘 zoom 后封顶 3）
+          // 期望建立倍率：与 PdfRenderer 同式（dpr 取 devicePixelRatio 与 scaleFactor 的 max，封顶 3）
           const expScale = (st) => {
-            const d = Math.min(2, Math.max(1, st.dpr || 1))
+            const d = Math.min(2, Math.max(1, Math.max(st.dpr || 1, st.sf || 0)))
             return Math.min(3, Math.max(1, d * (st.zoom / 100)))
           }
           // 收敛判定：显示宽 = baseW×zoom（±3%）、缓冲/显示 = scale/zoom（±0.08）
