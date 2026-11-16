@@ -94,21 +94,28 @@ function AppBody() {
   // （预览区是蒙层的兄弟节点，不在其祖先链上，滚动事件落到蒙层后无处可滚），且光标会变成箭头（workbuddy H1）
   useEffect(() => {
     if (!immersive) return
+    // 展开态命中栈节流（R-124）：elementsFromPoint 构造较贵，贴边拖动 60~120Hz，
+    // 压到 ~30Hz；只节流命中，不影响 setSidebarOpen 与 x 判定、不影响收起态 B-023。
+    let lastTocHit = 0
     const onMove = (e) => {
       if (e.clientX > window.innerWidth * 0.2) return
-      // B-023/R-120：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，
-      // 左缘 256px）时，这片区域是用户正在交互的内容，侧栏不得遮挡 →
-      //   · 收起态：不弹出（B-023）
-      //   · 已打开态：立即收起让位，用户能直接点目录（R-120，Windows 低分辨率实测遮挡）
-      // 命中测试只限定在 x≤20% 热区内执行（R-115 保留的节流边界）
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const onToc = !!(el && el.closest && el.closest('[data-toc-panel]'))
       if (sidebarOpenRef.current) {
-        cancelHide()
-        if (onToc) setSidebarOpen(false) // 悬目录即收起，把目录区让给用户
+        // 展开态：目录面板被侧栏(z-40)盖在下面，单数 elementFromPoint 命中的是
+        // 侧栏自身、拿不到 data-toc-panel——改用命中栈 elementsFromPoint（R-123，
+        // 被遮挡的 toc 仍在栈内）。命中 toc 即收起让位（R-120）。
+        const now = e.timeStamp
+        if (now - lastTocHit < 33) return
+        lastTocHit = now
+        const stack = document.elementsFromPoint(e.clientX, e.clientY)
+        if (stack.some(el => el.closest && el.closest('[data-toc-panel]'))) {
+          cancelHide()
+          setSidebarOpen(false)
+        }
         return
       }
-      if (onToc) return
+      // 收起态：目录未被遮挡，单数命中即可（B-023 让路），省一次栈构造
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (el && el.closest && el.closest('[data-toc-panel]')) return
       cancelHide()
       setSidebarOpen(true)
     }

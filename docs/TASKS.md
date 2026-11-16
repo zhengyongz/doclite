@@ -35,18 +35,18 @@
 
 | 维度 | 数量 |
 |---|---|
-| 总条目 | **161** |
-| ├ R-xxx 审查意见 | 122 |
+| 总条目 | **166** |
+| ├ R-xxx 审查意见 | 127 |
 | ├ B-xxx 用户反馈 | 24 |
 | ├ T-xxx 技术债 | 8 |
 | └ V-xxx 验证缺口 | 7 |
-| 🔴 高 | 15（+ B 段 24 项按 🔴 计） |
-| 🟡 中 | 69 |
-| ⚪ 低 | 53 |
+| 🔴 高 | 16（+ B 段 24 项按 🔴 计） |
+| 🟡 中 | 71 |
+| ⚪ 低 | 55 |
 
 | 状态 | 数量 |
 |---|---|
-| 已修 | 92 |
+| 已修 | 97 |
 | 已知限制 | 8 |
 | 已搁置 | 1 |
 | **未闭环（待修 56 + 待验 4）** | **60** |
@@ -57,7 +57,7 @@
 
 > 2026-11-09：B-020 经用户真机复核闭环；当轮新报 B-021~B-024 三修一登记，无新增 🔴 遗留。
 > 2026-11-10：workbuddy 审查 v0.8.3 实测复现两个渲染时序缺陷（R-108 H1/R-109 M1），连同配套 8 项同轮修入；R-110 为内存取舍列已知限制；发版排查发现 CI 冒烟步骤无显示环境从未绿过（R-119）一并修入。无新增 🔴 未闭环。
-> 2026-11-13：v0.8.3 真机（macOS V-005 清晰度、B-021 图片）确认；新报 Windows 两问：侧栏遮挡目录（R-120，已修）、PDF 100% 模糊（R-121，scaleFactor 校准已修待 V-007 真机）。
+> 2026-11-13：v0.8.3 真机（macOS V-005 清晰度、B-021 图片）确认；新报 Windows 两问：侧栏遮挡目录（R-120，已修）、PDF 100% 模糊（R-121，排查中；11-16 确认为设备问题已搁置、校准已回退）。
 > 2026-11-16：R-121 用户用其他 PDF 软件对标确认系设备问题（1366×768 低分屏 + 集显），已搁置；新报 Windows「打开方式」菜单名过长（R-122，已修 description 缩短）。
 
 ### 未闭环中优先级（33 项，按主题归类）
@@ -100,6 +100,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-013 | 审查 项目审查 #5 | Electron 安全加固不全：缺 sandbox / CSP / 窗口拦截 | `electron/main.cjs` | 已修 | v0.2.0 | 已开 `sandbox: true`、`setWindowOpenHandler`、`will-navigate`、index.html CSP |
 | R-096 | L4 端到端 2026-11-07 | 组件 bundle 内联的 pdfjs 与主应用是两个模块实例、从未配置 workerSrc → 应用内 PDF 转 Word/PNG/AZW3 全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`（组件拆分 v0.5.0 起即坏） | `src/utils/converters.js` + `vite.config.converters.js` + `build/pack-converters.cjs` | 已修 | v0.8.2 | worker 随组件 assets 发布（构建期复制 + 打包硬校验），方案见 STATE.md D-036；L4 C 段真实链路验证 |
 | R-108 | 审查 v0.8.3 H1 | 缩放时在途渲染把旧倍率 canvas 回填缓存，那一页永久又小又糊不自愈（实测 40 页 PDF 首轮 4/4 全中，等待 2.6s 仍驻留） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 渲染代际 genRef（缩放/换文件/dpr 变化即换代，提交前双重校验丢弃）+ dataset.renderKey 纹底重渲；方案见 STATE D-041；L4 C10 断言护网 |
+| R-123 | 审查 v0.8.4 H1 | R-120「悬目录即收起」是死代码：侧栏 z-40 展开后把 toc 整个盖住，单数 elementFromPoint 恒命中侧栏自身、onToc 恒 false，setSidebarOpen(false) 从不执行，目录遮挡未修复（真实可见窗口实测） | `src/App.jsx` | 已修 | v0.8.4 | 展开态改用命中栈 `elementsFromPoint`（被 z-40 盖住的 toc 仍在栈内）判定；L4 新增 E 段集成断言（R-125）护网 |
 
 ---
 
@@ -158,6 +159,8 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-111 | 审查 v0.8.3 M3 | `DPR` 模块级常量只读一次：Retina→外接 1080p 换屏/改系统缩放后清晰度修复失效 | `PdfRenderer.jsx` | 已修 | v0.8.3 | dpr 改 state + matchMedia 监听，变化即按新 targetScale 重渲；见 STATE D-041 |
 | R-112 | 审查 v0.8.3 M4 | 无任何缩放行为自动化测试，H1/M1 因此逸过 97/97 全绿 | `integration-app.cjs` | 已修 | v0.8.3 | 新增 L4 D 段：合成多页 PDF→滚中段→连点两次放大→断言缓冲倍率/显示宽度/滚动比例（C10/C11） |
 | R-119 | 发版排查 2026-11-10 | CI linux job 的冒烟步骤（V-004）自加入以来从未绿过：runner 无 X/Wayland，Electron ozone 初始化退出（Missing X server）→ L3 必红 | `scripts/smoke/run.mjs` cleanEnv | 已修 | v0.8.3 | 无显示环境自动注入 `ELECTRON_OZONE_PLATFORM_HINT=headless`（本地有显示不受影响）；两种环境 L1-L3 均 69/69 实测 |
+| R-124 | 审查 v0.8.4 M1 | R-120 把命中测试前移到展开态且每次 mousemove 执行，回退 R-115 省计算边界（60~120Hz elementFromPoint 强制布局），还加在恒 false 判断上 | `src/App.jsx` | 已修 | v0.8.4 | 命中测试移回展开态分支内；命中栈 `elementsFromPoint` 仅展开态构造 + 33ms 时间戳节流（收起态 B-023 仍单数命中、零节流） |
+| R-125 | 审查 v0.8.4 M2 | B 段 smoke 用 md（无 toc）覆盖不到 R-120 新分支，缺「azw3 目录+展开侧栏+悬 toc」集成断言 → 全绿但功能无效 | `integration-app.cjs` | 已修 | v0.8.4 | 新增 L4 E 段：注入 data-toc-panel 探针→热区触发展开→悬 toc 命中栈含被盖 toc 收起→收起态悬 toc 不弹（E1/E2/E3） |
 | R-120 | 用户反馈 v0.8.3 Win | 鼠标移到左边缘滑出侧栏，已打开文件的目录面板被侧栏遮挡，无法点击目录（低分辨率屏幕更明显；审查 L4 边界） | `src/App.jsx` | 已修 | v0.8.4 | 侧栏已打开态命中测试：指针悬在 data-toc-panel 上即收起让位（收起态悬目录不弹已是 B-023）；命中仍限 x≤20% 热区 |
 | R-121 | 用户反馈 v0.8.3 Win | Windows 打开 PDF 100% 不清晰、150% 反而清晰（与 B-024「越放大越糊」相反） | `PdfRenderer.jsx` | 已搁置 | — | 排查：①系统缩放 100% 排除 dpr 错位；②本地 `--force-device-scale-factor=1` 实证 1x 渲染锐利；③用户用其他 PDF 软件打开同样模糊 → **确系设备问题**（1366×768 低分屏 + Intel HD 集显），DocLite 无责。用户确认暂不再优化 |
 | R-122 | 用户反馈 v0.8.3 Win | Windows 右键「打开方式」里应用描述过长（轻快文档工具箱-Word/Excel/PPT/PDF 本地预览与格式转换），要求去掉副标题 | `package.json` description | 已修 | v0.8.4 | description 由 electron-builder 写入 exe 的 FileDescription（即 Windows「打开方式」显示），改为短名「轻快文档工具箱」；app 主名（标题/开始菜单/i18n）本就是短名，无其他影响 |
@@ -221,6 +224,8 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-116 | 审查 v0.8.3 L7 | 换文件旧 `pdfDoc` 只被覆盖引用，无 destroy（预存在） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 换文件与卸载时 `pdfDoc.destroy()`；换文件同时换代作废旧文档在途渲染 |
 | R-117 | 审查 v0.8.3 L8 | 驻留驱逐按页号最小优先：向上滚动恰好先删即将进入视口的页，小驻留上限（8）下来回重渲（预存在） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 驱逐改「离可见区最远优先」+ 释放前置零 canvas 尺寸 |
 | R-118 | 审查 v0.8.3 L5+L6 | C9 靠固定 350ms 等待判 naturalWidth，慢机假红；L1 正则绑死变量名，改名即误红 | `integration-app.cjs`、`run.mjs` | 已修 | v0.8.3 | C9 改图片解码轮询（100ms×5 最多 2s）；L1 放宽为只认 padStart(5) 写法，产物侧由 C9 守护 |
+| R-126 | 审查 v0.8.4 L1 | R-122 覆盖安装/增量更新时 Windows「打开方式」可能仍缓存旧长名；deb control Description 随 description 变短 | 发布流程 | 已修 | v0.8.4 | release notes 提示「若打开方式仍显示旧长名，请重新关联默认程序」；deb 功能说明由 desktop.Comment 承载（独立字段） |
+| R-127 | 审查 v0.8.4 L2 | 文档仍留「R-121 scaleFactor 校准已修待 V-007」陈旧陈述，与「已搁置/已回退」矛盾 | 文档 | 已修 | v0.8.4 | 已更新 11-13 条目与操作手册状态段为 11-16 结论（R-121 设备问题已搁置、校准已回退） |
 
 ---
 
