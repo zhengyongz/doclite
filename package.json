@@ -1,7 +1,7 @@
 {
   "name": "doclite",
   "private": true,
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "轻快文档工具箱",
   "author": "doclite",
   "main": "electron/main.cjs",
