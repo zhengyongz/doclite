@@ -96,10 +96,10 @@ function AppBody() {
     if (!immersive) return
     const onMove = (e) => {
       if (e.clientX > window.innerWidth * 0.2) return
-      // B-023/R-121：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，
+      // B-023/R-120：指针正悬在渲染器内部的目录面板上（如电子书预览的章节目录，
       // 左缘 256px）时，这片区域是用户正在交互的内容，侧栏不得遮挡 →
       //   · 收起态：不弹出（B-023）
-      //   · 已打开态：立即收起让位，用户能直接点目录（R-121，Windows 低分辨率实测遮挡）
+      //   · 已打开态：立即收起让位，用户能直接点目录（R-120，Windows 低分辨率实测遮挡）
       // 命中测试只限定在 x≤20% 热区内执行（R-115 保留的节流边界）
       const el = document.elementFromPoint(e.clientX, e.clientY)
       const onToc = !!(el && el.closest && el.closest('[data-toc-panel]'))
