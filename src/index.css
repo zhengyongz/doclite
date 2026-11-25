@@ -4,8 +4,9 @@
 
 /* ---------- Layout tokens ---------- */
 :root {
-  /* 顶栏高度（Header 的 py-3 + h-8 = 56px）；沉浸侧栏/热区靠它对齐，避免写死 top-14（workbuddy L4） */
-  --header-h: 3.5rem;
+  /* 顶栏高度（Header 的 py-2 + h-8 = 48px，R-129 紧凑化）；沉浸侧栏/热区靠它对齐，
+     避免写死 top-14（workbuddy L4）。改 Header padding 时必须同步这个值 */
+  --header-h: 3rem;
 }
 
 /* ---------- Base resets ---------- */
