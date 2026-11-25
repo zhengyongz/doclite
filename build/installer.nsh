@@ -16,6 +16,11 @@
 !macroend
 
 !macro customUnInstall
-  DeleteRegKey SHELL_CONTEXT "Software\Classes\Applications\DocLite.exe"
+  ; 双 hive 清理（R-138）：用户可能在 per-user 与 per-machine 间切换覆盖安装过，
+  ; 另一 hive 的 Applications 键会残留；DeleteRegKey 对不存在的键静默，两处都清
+  DeleteRegKey HKCU "Software\Classes\Applications\DocLite.exe"
+  DeleteRegKey HKLM "Software\Classes\Applications\DocLite.exe"
+  ; 与 electron-builder 模板（installer.nsh:224 / FileAssociation.nsh:131）的广播
+  ; 重复，保留以自足：即使上游模板变更，本脚本仍保证 Shell 刷新
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend

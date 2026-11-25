@@ -300,7 +300,9 @@ export default function PptxRenderer() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-t border-ink-100">
+      {/* 底部翻页导航。data-immersive-guard（R-134）：沉浸侧栏展开时盖住左缘，
+          鼠标要来点「上一页」时热区据此收起让位 */}
+      <div data-immersive-guard="" className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-t border-ink-100">
         <button
           onClick={() => setCurrentSlide(i => Math.max(0, i - 1))}
           disabled={currentSlide === 0}

@@ -613,6 +613,7 @@ B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令�
 - **R-131（差量升级，机制说明）**：electron-updater NSIS 差量需本地有上一版安装包缓存做基线；v0.8.3 为手动安装 → v0.8.4 全量属预期。经应用内更新装上 v0.8.4 后，下一版将走差量（V-008 ④）
 - **R-132（L4 环境鲁棒性，已修，顺带）**：swap 满载的 7.6G 机上 printToPDF 稳定红——根因 `disable-gpu + disable-software-rasterizer` 下 viz CopyOutput 共享内存传输失败（`viz.mojom.CopyOutputResultSender` 报错）。修复：GPU 开关仅无显示环境加；printToPDF 失败重试一次；E 段移至 B 段后（md 态内存最低，此前在 D 段后曾 OOM）；探针用后即删
 - 台账：R-128~R-132 + V-008；**冒烟 104/104**（L1 +1：data-immersive-guard 检查）+ verify 无阻塞
+- **审查修复（R-133~R-138）**：workbuddy 可见窗口实测抓到 H1——目录面板打开时控制条移到 x≥256，「目录」按钮中心 ~305 落在热区 20% 与侧栏 320+16 之间的死区 [288,336]，悬停永不收起（1366 屏死区更大）。修复：展开态热区下限 max(20%, 336)（收起态保持 B-018 左 20% 语义）；XLSX 页签条/PPTX 底部导航补 data-immersive-guard（R-134）；L4 新增 E4（真实 azw3 目录打开态悬死区按钮断言收起，R-135）；--header-h 精确 49px（R-137）；installer.nsh 卸载双 hive 清理 + V-008 差量版本对修正（R-138）。**冒烟 105/105**（E4 全绿：toc面板=true → 展开 → 悬按钮 -230 收起中）
 
 
 ### 遗留

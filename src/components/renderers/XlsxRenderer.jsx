@@ -61,9 +61,10 @@ export default function XlsxRenderer() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sheet tabs */}
+      {/* Sheet tabs。data-immersive-guard（R-134）：沉浸侧栏展开时盖住左缘，
+          鼠标要来点页签时热区据此收起让位 */}
       {sheets.length > 1 && (
-        <div className="flex gap-0 overflow-x-auto border-b border-ink-200 bg-ink-50 px-2">
+        <div data-immersive-guard="" className="flex gap-0 overflow-x-auto border-b border-ink-200 bg-ink-50 px-2">
           {sheets.map((s, i) => (
             <button
               key={s.name}

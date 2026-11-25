@@ -98,13 +98,18 @@ function AppBody() {
     // 渲染器的交互控制条（如电子书的「目录/章节/上一章/下一章」）。指针悬在这些区域
     // 上时是用户要操作的内容，侧栏浮层不得弹出/保持遮挡。
     const GUARD = '[data-toc-panel], [data-immersive-guard]'
+    // 展开态热区下限 = max(20% 视口, 336px)（R-133）：侧栏宽 320+位移/阴影余量 16。
+    // 若只用 20%（1366 屏=273px），x∈[273,320] 是被侧栏盖住但 onMove 直接 return 的
+    // 死区——目录面板打开时「目录」按钮移到 ~272-338，恰好整个落在死区，悬停永不
+    // 收起（v0.8.5 审查 H1 实测）。收起态仍用 20%，保持 B-018「左 20%」原语义。
     const onMove = (e) => {
-      if (e.clientX > window.innerWidth * 0.2) return
+      const hot20 = window.innerWidth * 0.2
       if (sidebarOpenRef.current) {
+        if (e.clientX > Math.max(hot20, 336)) return
         // 展开态：让路目标被侧栏(z-40)盖在下面，单数 elementFromPoint 命中的是
         // 侧栏自身——改用命中栈 elementsFromPoint（R-123，被遮挡的元素仍在栈内）。
         // 不做时间戳节流（R-124 复盘）：节流会丢掉进入区域后的最后一个 mousemove，
-        // 指针停住后悬停不收起；命中栈仅在 x≤20% 热区且展开态构造，频率可接受。
+        // 指针停住则悬停不收起；命中栈仅在热区内且展开态构造，频率可接受。
         const stack = document.elementsFromPoint(e.clientX, e.clientY)
         if (stack.some(el => el.closest && el.closest(GUARD))) {
           cancelHide()
@@ -112,6 +117,7 @@ function AppBody() {
         }
         return
       }
+      if (e.clientX > hot20) return
       // 收起态：目标未被遮挡，单数命中即可（B-023 让路），省一次栈构造
       const el = document.elementFromPoint(e.clientX, e.clientY)
       if (el && el.closest && el.closest(GUARD)) return

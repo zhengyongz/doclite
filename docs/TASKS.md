@@ -35,18 +35,18 @@
 
 | 维度 | 数量 |
 |---|---|
-| 总条目 | **172** |
-| ├ R-xxx 审查意见 | 132 |
+| 总条目 | **178** |
+| ├ R-xxx 审查意见 | 138 |
 | ├ B-xxx 用户反馈 | 24 |
 | ├ T-xxx 技术债 | 8 |
 | └ V-xxx 验证缺口 | 8 |
-| 🔴 高 | 16（+ B 段 24 项按 🔴 计） |
-| 🟡 中 | 76 |
-| ⚪ 低 | 56 |
+| 🔴 高 | 17（+ B 段 24 项按 🔴 计） |
+| 🟡 中 | 79 |
+| ⚪ 低 | 58 |
 
 | 状态 | 数量 |
 |---|---|
-| 已修 | 101 |
+| 已修 | 107 |
 | 已知限制 | 9 |
 | 已搁置 | 1 |
 | **未闭环（待修 56 + 待验 5）** | **61** |
@@ -60,6 +60,7 @@
 > 2026-11-13：v0.8.3 真机（macOS V-005 清晰度、B-021 图片）确认；新报 Windows 两问：侧栏遮挡目录（R-120，已修）、PDF 100% 模糊（R-121，排查中；11-16 确认为设备问题已搁置、校准已回退）。
 > 2026-11-16：R-121 用户用其他 PDF 软件对标确认系设备问题（1366×768 低分屏 + 集显），已搁置；新报 Windows「打开方式」菜单名过长（R-122，已修 description 缩短）。
 > 2026-11-25：v0.8.4 Windows 真机四项反馈全处理——控制条让路 R-128（上轮只护了目录面板，被挡的是控制条按钮）、顶部紧凑 R-129、安装器强制刷新菜单名 R-130、差量升级机制说明 R-131（待下一版验证）；顺带 L4 环境鲁棒性 R-132。
+> 2026-11-25（二）：v0.8.5 审查（workbuddy 可见窗口实测）抓到死区 H1（目录打开态「目录」按钮悬停不收起，R-133）等 6 项，全部修入：热区 max(20%,336)、XLSX/PPTX 补 guard、L4 补 E4 真实几何断言、--header-h 49px、卸载双 hive。
 
 ### 未闭环中优先级（34 项，按主题归类）
 
@@ -102,6 +103,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-096 | L4 端到端 2026-11-07 | 组件 bundle 内联的 pdfjs 与主应用是两个模块实例、从未配置 workerSrc → 应用内 PDF 转 Word/PNG/AZW3 全部抛 `No "GlobalWorkerOptions.workerSrc" specified.`（组件拆分 v0.5.0 起即坏） | `src/utils/converters.js` + `vite.config.converters.js` + `build/pack-converters.cjs` | 已修 | v0.8.2 | worker 随组件 assets 发布（构建期复制 + 打包硬校验），方案见 STATE.md D-036；L4 C 段真实链路验证 |
 | R-108 | 审查 v0.8.3 H1 | 缩放时在途渲染把旧倍率 canvas 回填缓存，那一页永久又小又糊不自愈（实测 40 页 PDF 首轮 4/4 全中，等待 2.6s 仍驻留） | `PdfRenderer.jsx` | 已修 | v0.8.3 | 渲染代际 genRef（缩放/换文件/dpr 变化即换代，提交前双重校验丢弃）+ dataset.renderKey 纹底重渲；方案见 STATE D-041；L4 C10 断言护网 |
 | R-123 | 审查 v0.8.4 H1 | R-120「悬目录即收起」是死代码：侧栏 z-40 展开后把 toc 整个盖住，单数 elementFromPoint 恒命中侧栏自身、onToc 恒 false，setSidebarOpen(false) 从不执行，目录遮挡未修复（真实可见窗口实测） | `src/App.jsx` | 已修 | v0.8.4 | 展开态改用命中栈 `elementsFromPoint`（被 z-40 盖住的 toc 仍在栈内）判定；L4 新增 E 段集成断言（R-125）护网 |
+| R-133 | 审查 v0.8.5 H1 | 目录面板打开时控制条移到 x≥256，「目录」按钮中心 ~305 落在热区 20%（1440=288）与侧栏 320+16 之间的死区 [288,336]：被侧栏盖住但 onMove 直接 return，悬停永不收起（可见窗口真实 azw3 实测） | `src/App.jsx` | 已修 | v0.8.5 | 展开态热区下限取 max(20%, 336)；收起态维持 B-018 左 20% 语义不变。L4 新增 E4 断言（真实 azw3 目录打开态悬死区按钮收起） |
 
 ---
 
@@ -166,6 +168,9 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-129 | 用户反馈 v0.8.4 #3 | 顶部四层横条（系统标题栏+应用名/语言+文件名/缩放+目录/章节控制条）在 1366×768 小屏占比过高，正文只剩约1/3 | `Header.jsx` + `PreviewToolbar.jsx` + `Azw3Renderer.jsx` | 已修 | v0.8.5 | Header py-3→py-2 且副标题与主名同行（hidden md:inline）；PreviewToolbar py-2→py-1.5；控制条 py-2→py-1.5、按钮 py-1.5→py-1、gap-3→gap-2 |
 | R-130 | 用户反馈 v0.8.4 #2 | 升级 v0.8.4 后右键「打开方式」仍显示旧长名（exe FileDescription 已短，但 Explorer/注册表缓存旧值） | `build/installer.nsh`（新增） | 已修 | v0.8.5 | NSIS customInstall 显式写 Applications\DocLite.exe 的 FriendlyAppName（Explorer 显示名优先级最高）+ 默认值，广播 SHCNE_ASSOCCHANGED 立即刷新；卸载时清理 |
 | R-131 | 用户反馈 v0.8.4 #1 | v0.8.3→v0.8.4 全量升级而非差量 | 升级机制 | 已知限制 | — | electron-updater NSIS 差量需本地有上一版安装包缓存（packageCache）做差分基线；v0.8.3 为手动安装无基线 → 本次全量属机制预期。经应用内更新装上 v0.8.4 后，下一起更新将走差量（blockmap 已随版发布） |
+| R-134 | 审查 v0.8.5 M1 | XLSX Sheet 页签条与 PPTX 底部翻页导航未标 data-immersive-guard，侧栏展开时同样被盖住点不到 | `XlsxRenderer.jsx` + `PptxRenderer.jsx` | 已修 | v0.8.5 | 两处容器补 data-immersive-guard，GUARD 选择器无需改 |
+| R-135 | 审查 v0.8.5 M2 | L4 只测 data-toc-panel 探针，data-immersive-guard 无行为断言——真实控制条几何（272-338）整段失效也能 104/104 全绿（与 v0.8.3/84 两轮教训同源） | `integration-app.cjs` | 已修 | v0.8.5 | 新增 E4：真实 azw3 打开目录面板→展开侧栏→悬死区内「目录」按钮→断言收起（同时守住 R-133/R-134 几何） |
+| R-136 | 审查 v0.8.5 M3 | 版本号仍 0.8.4，verify 警告 tag 已存在；不 bump 重打会覆盖 v0.8.4 产物、更新链路版本错乱 | `package.json` + lockfile | 已修 | v0.8.5 | 发版流程 bump 0.8.5 + lockfile 同步（随修复一并提交） |
 | R-120 | 用户反馈 v0.8.3 Win | 鼠标移到左边缘滑出侧栏，已打开文件的目录面板被侧栏遮挡，无法点击目录（低分辨率屏幕更明显；审查 L4 边界） | `src/App.jsx` | 已修 | v0.8.4 | 侧栏已打开态命中测试：指针悬在 data-toc-panel 上即收起让位（收起态悬目录不弹已是 B-023）；命中仍限 x≤20% 热区 |
 | R-121 | 用户反馈 v0.8.3 Win | Windows 打开 PDF 100% 不清晰、150% 反而清晰（与 B-024「越放大越糊」相反） | `PdfRenderer.jsx` | 已搁置 | — | 排查：①系统缩放 100% 排除 dpr 错位；②本地 `--force-device-scale-factor=1` 实证 1x 渲染锐利；③用户用其他 PDF 软件打开同样模糊 → **确系设备问题**（1366×768 低分屏 + Intel HD 集显），DocLite 无责。用户确认暂不再优化 |
 | R-122 | 用户反馈 v0.8.3 Win | Windows 右键「打开方式」里应用描述过长（轻快文档工具箱-Word/Excel/PPT/PDF 本地预览与格式转换），要求去掉副标题 | `package.json` description | 已修 | v0.8.4 | description 由 electron-builder 写入 exe 的 FileDescription（即 Windows「打开方式」显示），改为短名「轻快文档工具箱」；app 主名（标题/开始菜单/i18n）本就是短名，无其他影响 |
@@ -232,6 +237,8 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | R-126 | 审查 v0.8.4 L1 | R-122 覆盖安装/增量更新时 Windows「打开方式」可能仍缓存旧长名；deb control Description 随 description 变短 | 发布流程 | 已修 | v0.8.4 | release notes 提示「若打开方式仍显示旧长名，请重新关联默认程序」；deb 功能说明由 desktop.Comment 承载（独立字段） |
 | R-127 | 审查 v0.8.4 L2 | 文档仍留「R-121 scaleFactor 校准已修待 V-007」陈旧陈述，与「已搁置/已回退」矛盾 | 文档 | 已修 | v0.8.4 | 已更新 11-13 条目与操作手册状态段为 11-16 结论（R-121 设备问题已搁置、校准已回退） |
 | R-132 | 发版排查 2026-11-25 | L4 在 swap 满载的 7.6G 机上 printToPDF 稳定红（viz CopyOutput 共享内存反序列化失败 → Printing failed）；E 段在 D 段后曾致渲染进程 OOM 假红 | `integration-app.cjs` | 已修 | v0.8.5 | GPU 开关仅无显示环境加（有显示保留渲染路径）；printToPDF 失败自动重试一次；E 段移至 B 段后（md 态内存最低）；探针用后即删 |
+| R-137 | 审查 v0.8.5 L1 | --header-h 48px vs Header 实际 49px（漏算 border-b 1px），侧栏顶边盖 Header 底边框 1px（仅视觉） | `src/index.css` | 已修 | v0.8.5 | 改 49px 并注明口径（py-2 16 + h-8 32 + border 1）；旧 3.5rem 同样差 1px 属既有偏差 |
+| R-138 | 审查 v0.8.5 L2 | installer.nsh：①SHChangeNotify 与 electron-builder 模板广播重复；②customUnInstall 只清当前 hive，跨 per-user/per-machine 覆盖时另一 hive 残留；③V-008 差量验证的版本对写错 | `build/installer.nsh` + 文档 | 已修 | v0.8.5 | ①保留并注释（自足性）；②卸载改双 hive 清理（HKCU+HKLM）；③V-008 改为 v0.8.4→v0.8.5 应用内差量 |
 
 ---
 
@@ -292,7 +299,7 @@ R-056、R-057、R-058、R-060、R-061、R-070、R-080、R-081、R-082、R-083、
 | V-005 | B-024 的 retina 渲染修复未在 macOS 真机验证 | macOS 清晰度实际效果未知 | 待验 | 需 macOS 真机（本机 Linux dpr=1 时无法复现；Linux 200% 缩放机 dpr=2 已由 L4 C10 实证缓冲=物理像素） |
 | V-006 | PDF 缩放后未逐页目视确认无「大小不一/留边缝」 | R-108 陈旧画布的用户可见形态（页面比占位窄、居中留缝） | 待验 | 用户升级 v0.8.3 后在不同缩放档位翻几页确认；L4 C10 已在自动化层守护 |
 | V-007 | Windows 真机：R-121 的 100% 模糊 + R-120 侧栏目录遮挡 | Windows 两问的最终结论 | 待验 | **模糊部分已确认**：用户用其他 PDF 软件打开同样模糊 → 确系设备问题（1366×768 低分屏 + 集显），R-121 关闭。**侧栏部分**：装 v0.8.4 后确认目录面板不再被侧栏遮挡、可点击；另确认「打开方式」菜单名已变短（R-122） |
-| V-008 | Windows 真机：R-128 控制条让路 + R-129 顶部紧凑 + R-130 菜单名刷新 + 下一起差量升级 | v0.8.5 四项 Windows 改动待验 | 待验 | 装 v0.8.5：①侧栏滑出后移到「目录/章节/上一章」控制条应收起让位；②顶部横条变矮、正文更高；③「打开方式」短名（安装器已强制刷新注册表，无需手动重关联）；④v0.8.5→v0.8.6 经应用内更新应走差量 |
+| V-008 | Windows 真机：R-128 控制条让路 + R-129 顶部紧凑 + R-130 菜单名刷新 + 下一起差量升级 | v0.8.5 四项 Windows 改动待验 | 待验 | 装 v0.8.5：①侧栏滑出后移到「目录/章节/上一章」控制条应收起让位；②顶部横条变矮、正文更高；③「打开方式」短名（安装器已强制刷新注册表，无需手动重关联）；④v0.8.4（经应用内更新安装后）→v0.8.5 应用内更新应走 blockmap 差量（R-138 文案修正）；⑤覆盖安装后查 HKCU\Software\Classes\Applications\DocLite.exe 的 FriendlyAppName 为短名、卸载后该键消失 |
 
 ---
 

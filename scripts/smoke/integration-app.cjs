@@ -553,6 +553,34 @@ p { margin: 5px 0; }
           imgs.length >= 1 && badFmt.length === 0 && notLoaded.length === 0,
           imgs.length === 0 ? '合成图未被提取进 MOBI'
             : `共 ${imgs.length} 图：${badFmt.length} 个格式错(${badFmt.map(i => JSON.stringify(i.r)).slice(0, 3).join(',')}) ${notLoaded.length} 个未加载`)
+
+        // ---- E4：目录打开态「目录」按钮死区让路（R-133/R-135）----
+        // v0.8.5 审查 H1 实测：目录面板打开后控制条移到 x≥256，「目录」按钮中心 ~305
+        // 落在旧热区 20%（1440 窗=288）外的死区 [288,336]——展开的侧栏盖住它且悬停
+        // 永不收起。修复后展开态热区放宽 max(20%,336)。用真实 azw3 验证整条几何：
+        // 点开目录面板 → 收起态从正文区触发展开 → 悬死区内「目录」按钮 → 断言收起。
+        try {
+          const tocOpened = await withTimeout(win.webContents.executeJavaScript(`
+            (() => {
+              const b = Array.from(document.querySelectorAll('button')).find(x => /目录|Contents/i.test(x.textContent || ''))
+              if (!b) return false
+              if (!document.querySelector('[data-toc-panel]')) b.click()
+              return !!document.querySelector('[data-toc-panel]')
+            })()
+          `), 5000, 'E4 点目录').catch(() => false)
+          // 收起态从正文区（y=500 避开控制条 guard）触发展开
+          win.webContents.sendInputEvent({ type: 'mouseMove', x: 270, y: 500 })
+          const e4Open = await waitForSidebar(false)
+          // 悬死区内「目录」按钮（x=305 ∈ [288,336]，y=108 在控制条高度内）→ 应收起
+          win.webContents.sendInputEvent({ type: 'mouseMove', x: 305, y: 108 })
+          const e4Closed = await waitForSidebar(true)
+          assert('E4 目录打开态悬「目录」按钮（死区 [288,336] 内）→ 收起让位（R-133）',
+            tocOpened && e4Open === openTfStr && e4Closed && CLOSED_RE.test(String(e4Closed)),
+            `toc面板=${tocOpened} 展开=${e4Open} 悬按钮后=${e4Closed}`)
+        } catch (e) {
+          console.log('[smoke] E4 失败:', e && e.stack ? e.stack : String(e))
+          results.push({ name: 'E4 目录按钮死区让路无异常', ok: false, detail: String(e && e.message ? e.message : e) })
+        }
       }
     }
 
