@@ -3,16 +3,17 @@ import { useI18n } from '../i18n'
 export default function Header() {
   const { t, lang, setLang } = useI18n()
   return (
-    <header className="app-header flex items-center gap-2 px-4 py-3 bg-white border-b border-ink-200 select-none lg:px-6">
+    <header className="app-header flex items-center gap-2 px-4 py-2 bg-white border-b border-ink-200 select-none lg:px-6">
       {/* Logo / icon（无交互，macOS 下随整条 header 成为拖动区的一部分） */}
       <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent-500 text-white text-sm font-bold">
         Ld
       </div>
-      <div className="flex flex-col leading-tight">
+      {/* R-129：副标题与主名同行（小屏 768 高下顶部横条占比过高，两行变一行省 ~16px） */}
+      <div className="flex items-baseline gap-2 leading-tight">
         <span className="text-sm font-semibold tracking-wide text-ink-900">
           {t('header.app')}
         </span>
-        <span className="text-[11px] text-ink-400">
+        <span className="text-[11px] text-ink-400 hidden md:inline">
           LightDoc Viewer &amp; Converter
         </span>
       </div>

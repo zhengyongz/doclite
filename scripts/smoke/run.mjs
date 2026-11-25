@@ -185,8 +185,12 @@ function layerStatic() {
   const app = existsSync(join(ROOT, 'src/App.jsx')) ? readFileSync(join(ROOT, 'src/App.jsx'), 'utf8') : ''
   const azw3 = existsSync(join(ROOT, 'src/components/renderers/Azw3Renderer.jsx'))
     ? readFileSync(join(ROOT, 'src/components/renderers/Azw3Renderer.jsx'), 'utf8') : ''
+  // 沉浸热区让路标记（B-023/R-128）：目录面板 data-toc-panel + 交互控制条
+  // data-immersive-guard；App 热区命中栈对两者让路（展开态收起、收起态不弹）
   record('L1', 'Azw3Renderer 目录面板带 data-toc-panel 标记', /data-toc-panel/.test(azw3))
-  record('L1', 'App 热区对 [data-toc-panel] 让路', /closest\('\[data-toc-panel\]'\)/.test(app))
+  record('L1', 'Azw3Renderer 控制条带 data-immersive-guard 标记（R-128）', /data-immersive-guard/.test(azw3))
+  record('L1', 'App 热区让路选择器含 data-toc-panel 与 data-immersive-guard',
+    /\[data-toc-panel\],\s*\[data-immersive-guard\]/.test(app) && /closest\(GUARD\)/.test(app))
 
   // i18n 完整性（D-016）：关键键在 zh/en 两个字典里都存在
   const i18n = readFileSync(join(ROOT, 'src/i18n.jsx'), 'utf8')

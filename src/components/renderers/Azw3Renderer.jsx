@@ -210,7 +210,7 @@ export default function Azw3Renderer() {
       {/* 侧边目录栏。data-toc-panel：沉浸热区据此让路——鼠标悬在目录面板上时
           （B-023）App.jsx 不弹出左侧工具栏浮层，避免遮挡目录 */}
       {showToc && (
-        <div data-toc-panel="" className="w-64 shrink-0 border-r border-ink-200 bg-white overflow-y-auto p-3">
+        <div data-toc-panel="" data-immersive-guard="" className="w-64 shrink-0 border-r border-ink-200 bg-white overflow-y-auto p-3">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-ink-400 uppercase tracking-wider">{t('renderer.azw.toc')}</p>
             <button
@@ -235,11 +235,14 @@ export default function Azw3Renderer() {
 
       {/* 主阅读区 */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部工具栏 */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-ink-200 bg-white shrink-0">
+        {/* 顶部工具栏。data-immersive-guard：App 沉浸热区据此让路（R-128）——
+            侧栏浮层展开时盖住左缘，鼠标要来点「目录/上一章/下一章」时会命中
+            此标记 → 侧栏收起让位；不标记则按钮永远点不到（v0.8.4 用户实测）。
+            py-1.5 紧凑化（R-129）：小屏（768 高）下顶部四层横条占比过高 */}
+        <div data-immersive-guard="" className="flex items-center gap-2 px-4 py-1.5 border-b border-ink-200 bg-white shrink-0">
           <button
             onClick={() => setShowToc(!showToc)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="6" x2="21" y2="6"/>
@@ -261,7 +264,7 @@ export default function Azw3Renderer() {
               }
             }}
             disabled={currentSection === 0}
-            className="px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             {t('renderer.azw.prevChapter')}
           </button>
@@ -273,7 +276,7 @@ export default function Azw3Renderer() {
               }
             }}
             disabled={currentSection >= totalSections - 1}
-            className="px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             {t('renderer.azw.nextChapter')}
           </button>

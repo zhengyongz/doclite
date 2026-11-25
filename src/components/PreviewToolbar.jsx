@@ -35,7 +35,7 @@ export default function PreviewToolbar() {
   const maxZoom = 200
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-white border-b border-ink-100 select-none">
+    <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-white border-b border-ink-100 select-none">
       {/* Left: file badge */}
       <div className="flex items-center gap-2 min-w-0">
         {meta && (

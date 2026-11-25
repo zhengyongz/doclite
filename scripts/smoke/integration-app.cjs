@@ -36,6 +36,17 @@ function assert(name, ok, detail) {
   console.log(`[assert] ${ok ? 'PASS' : 'FAIL'}: ${name}${detail !== undefined && detail !== '' ? '  ' + detail : ''}`)
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// printToPDF 带一次重试（R-131）：Chromium 打印在内存紧张（swap 高载）下偶发
+// 「Failed to generate PDF: Printing failed」，800ms 后重试一次即可恢复
+const printToPdfWithRetry = async (wc, opts) => {
+  try {
+    return await wc.printToPDF(opts)
+  } catch (e) {
+    console.log('[smoke] printToPDF 首次失败，重试一次:', e.message)
+    await sleep(800)
+    return await wc.printToPDF(opts)
+  }
+}
 
 // executeJavaScript 在渲染进程卡死时会永久挂起 —— 必须加超时
 function withTimeout(promise, ms, label) {
@@ -72,10 +83,15 @@ const RADICAL_MAP = {
 }
 const normCJK = (s) => String(s || '').replace(/[\u2F00-\u2FD5\u2E80-\u2EFF]/g, (ch) => RADICAL_MAP[ch] || ch)
 
-// 无显示环境（CI / 容器）下需要关掉 GPU 相关，否则 DRM 报错刷屏且渲染进程起不来
-app.disableHardwareAcceleration()
-app.commandLine.appendSwitch('disable-gpu')
-app.commandLine.appendSwitch('disable-software-rasterizer')
+// GPU 相关开关仅无显示环境（CI / 容器）加：有显示环境保留 GPU/软件光栅路径（R-131）。
+// printToPDF 内部 viz CopyOutput 在「disable-gpu + disable-software-rasterizer」的纯
+// CPU 合成下走共享内存传输，内存/swap 高载（7.6G 机 swap 满载实测）会反序列化失败
+// → 「Printing failed」稳定红；保留渲染路径则不受影响。
+if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+  app.commandLine.appendSwitch('disable-software-rasterizer')
+}
 app.commandLine.appendSwitch('disable-dev-shm-usage')
 app.commandLine.appendSwitch('no-sandbox')
 
@@ -299,6 +315,47 @@ app.whenReady().then(async () => {
     assert('B4 鼠标移出 20% 区（分步经侧栏右缘离开）侧栏防抖收起',
       closedTf && CLOSED_RE.test(String(closedTf)), `transform=${closedTf}`)
 
+    // ================ E 段：侧栏展开态悬 toc 收起（B-023/R-120，R-123/R-125）。置于 B 段后执行：md 态内存最低；曾紧跟 D 段 8 页 2.4x canvas 驻留（~95MB）致渲染进程 OOM(exitCode 5) 全段假红================
+    // 教训（R-123）：单数 elementFromPoint 在侧栏 z-40 展开态被侧栏自身挡住、拿不到
+    // 下面的 data-toc-panel，R-120「悬目录即收起」因此是死代码、目录遮挡没修。修复用
+    // 命中栈 elementsFromPoint（被遮挡的 toc 仍在栈内）。这里注入一个与真实目录几何
+    // 一致的 data-toc-panel 探针（absolute 左缘 0..256、高 1000、无 z-index，展开的侧栏
+    // z-40 会盖住它），复现「展开侧栏 → 悬 toc」真实路径做回归断言（R-125 防"全绿没修"）。
+    try {
+      // 1) 注入 toc 探针（当前沉浸预览页；标记与渲染器目录面板同）
+      await win.webContents.executeJavaScript(`(() => {
+        if (!document.querySelector('[data-smoke-toc]')) {
+          const d = document.createElement('div')
+          d.dataset.smokeToc = '1'
+          d.setAttribute('data-toc-panel', '')
+          d.style.cssText = 'position:absolute;left:0;top:0;width:256px;height:1000px;background:rgba(0,0,0,0)'
+          document.body.appendChild(d)
+        }
+        return true
+      })()`)
+      // 2) 指针放热区内、toc 之外（x=270：>256 不在 toc、<273 热区）→ 触发侧栏展开
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 270, y: 500 })
+      const eOpen = await waitForSidebar(false)
+      assert('E1 注入 data-toc-panel 探针后热区（x=270 非 toc 区）触发侧栏展开',
+        eOpen === openTfStr, `transform=${eOpen}`)
+      // 3) 移到 toc 区（x=150）：展开态命中栈应含被 z-40 盖住的 toc → 收起让位（R-120 修复）
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 150, y: 500 })
+      const eClosed = await waitForSidebar(true)
+      assert('E2 展开态悬 toc（命中栈含被盖 toc）→ 收起让位（R-120）',
+        eClosed && CLOSED_RE.test(String(eClosed)), `transform=${eClosed}`)
+      // 4) 收起态再悬 toc（x=120）：单数命中 toc → 不弹（B-023 保留）
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 120, y: 500 })
+      await sleep(400)
+      const tfAfter = await sidebarTransform()
+      assert('E3 收起态悬 toc 不弹（B-023 保留）', CLOSED_RE.test(String(tfAfter)), `transform=${tfAfter}`)
+      // 探针用后即删：不残留到 C/D 段（DOM 叠加与命中干扰）
+      await win.webContents.executeJavaScript("(() => { const d = document.querySelector('[data-smoke-toc]'); if (d) d.remove(); return true })()").catch(() => {})
+    } catch (e) {
+      console.log('[smoke] E 段失败:', e && e.stack ? e.stack : String(e))
+      results.push({ name: 'E 段侧栏展开 toc 行为无异常', ok: false, detail: String(e && e.message ? e.message : e) })
+    }
+
+
     // ================= C 段：PDF→AZW3 端到端（B-017 / B-020 / V-002 本地部分）=================
     // 结构完全复刻用户报告（docs/reviews/2026-11-05-用户反馈三项.md）：
     //   第十章 / 中文章名行 / 三行大写英文副标题 / 正文   ← 报告的多行副标题形态
@@ -346,7 +403,7 @@ p { margin: 5px 0; }
         }))()
       `)
       await pdfWin.webContents.executeJavaScript('document.fonts.ready.then(() => true)')
-      pdfBuf = await pdfWin.webContents.printToPDF({ pageSize: 'A4', printBackground: false })
+      pdfBuf = await printToPdfWithRetry(pdfWin.webContents, { pageSize: 'A4', printBackground: false })
       pdfWin.destroy()
     } catch (e) {
       console.log('[smoke] 合成 PDF 失败:', e.message)
@@ -520,7 +577,7 @@ body { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK', sans-serif; margin: 24p
         try {
           await zw.loadURL('data:text/html;charset=utf-8;base64,' + Buffer.from(zoomPdfHtml, 'utf8').toString('base64'))
           await zw.webContents.executeJavaScript('document.fonts.ready.then(() => true)')
-          zoomPdfBuf = await zw.webContents.printToPDF({ pageSize: 'A4', printBackground: false })
+          zoomPdfBuf = await printToPdfWithRetry(zw.webContents, { pageSize: 'A4', printBackground: false })
         } finally {
           zw.destroy()
         }
@@ -615,49 +672,20 @@ body { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK', sans-serif; margin: 24p
           assert('C11 缩放按比例保持滚动位置（R-109）',
             scrollBefore > 0 && Math.abs(ratio - expectRatio) <= 0.03,
             `scrollTop ${scrollBefore}→${stB ? stB.scrollTop : '?'} 比例 ${ratio.toFixed(3)}（期望 ${expectRatio.toFixed(3)}）`)
+
+          // 缩放复位 100%（R-131）：减少高倍率 canvas 驻留（8 页 ×2.4x ≈95MB），
+          // 防 A16 截图时渲染进程内存紧张（曾在 E 段后 OOM exitCode 5）
+          const zoomOutClick = () => withTimeout(win.webContents.executeJavaScript(`
+            (() => { const b = Array.from(document.querySelectorAll('button')).find(x => /缩小|Zoom out/i.test(x.getAttribute('aria-label') || '')); if (b && !b.disabled) b.click(); return !!b })()
+          `), 5000, 'D 段点缩小').catch(() => false)
+          await zoomOutClick()
+          await sleep(200)
+          await zoomOutClick()
         }
       }
     } catch (e) {
       console.log('[smoke] D 段失败:', e && e.stack ? e.stack : String(e))
       results.push({ name: 'D 段 PDF 缩放行为无异常', ok: false, detail: String(e && e.message ? e.message : e) })
-    }
-
-    // ================ E 段：侧栏展开态悬 toc 收起（B-023/R-120，R-123/R-125）================
-    // 教训（R-123）：单数 elementFromPoint 在侧栏 z-40 展开态被侧栏自身挡住、拿不到
-    // 下面的 data-toc-panel，R-120「悬目录即收起」因此是死代码、目录遮挡没修。修复用
-    // 命中栈 elementsFromPoint（被遮挡的 toc 仍在栈内）。这里注入一个与真实目录几何
-    // 一致的 data-toc-panel 探针（absolute 左缘 0..256、高 1000、无 z-index，展开的侧栏
-    // z-40 会盖住它），复现「展开侧栏 → 悬 toc」真实路径做回归断言（R-125 防"全绿没修"）。
-    try {
-      // 1) 注入 toc 探针（当前沉浸预览页；标记与渲染器目录面板同）
-      await win.webContents.executeJavaScript(`(() => {
-        if (!document.querySelector('[data-smoke-toc]')) {
-          const d = document.createElement('div')
-          d.dataset.smokeToc = '1'
-          d.setAttribute('data-toc-panel', '')
-          d.style.cssText = 'position:absolute;left:0;top:0;width:256px;height:1000px;background:rgba(0,0,0,0)'
-          document.body.appendChild(d)
-        }
-        return true
-      })()`)
-      // 2) 指针放热区内、toc 之外（x=270：>256 不在 toc、<273 热区）→ 触发侧栏展开
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: 270, y: 500 })
-      const eOpen = await waitForSidebar(false)
-      assert('E1 注入 data-toc-panel 探针后热区（x=270 非 toc 区）触发侧栏展开',
-        eOpen === openTfStr, `transform=${eOpen}`)
-      // 3) 移到 toc 区（x=150）：展开态命中栈应含被 z-40 盖住的 toc → 收起让位（R-120 修复）
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: 150, y: 500 })
-      const eClosed = await waitForSidebar(true)
-      assert('E2 展开态悬 toc（命中栈含被盖 toc）→ 收起让位（R-120）',
-        eClosed && CLOSED_RE.test(String(eClosed)), `transform=${eClosed}`)
-      // 4) 收起态再悬 toc（x=120）：单数命中 toc → 不弹（B-023 保留）
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: 120, y: 500 })
-      await sleep(400)
-      const tfAfter = await sidebarTransform()
-      assert('E3 收起态悬 toc 不弹（B-023 保留）', CLOSED_RE.test(String(tfAfter)), `transform=${tfAfter}`)
-    } catch (e) {
-      console.log('[smoke] E 段失败:', e && e.stack ? e.stack : String(e))
-      results.push({ name: 'E 段侧栏展开 toc 行为无异常', ok: false, detail: String(e && e.message ? e.message : e) })
     }
 
     // ---------- A16 渲染层无未捕获异常 ----------

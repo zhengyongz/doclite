@@ -603,6 +603,18 @@ B-020 / V-002 的本地端到端闭环（接手 `npm run handoff` 交接指令�
 - **V-007 更新**：模糊部分已关闭；侧栏遮挡（R-120）与菜单名（R-122）待用户 Windows 装 v0.8.4 验证
 - 台账：R-121 已搁置、R-122 已修、V-007 更新；**冒烟 100/100、verify 无阻塞**
 
+### 14. v0.8.4 Windows 真机四项反馈处理（2026-11-25）
+
+来源：用户真机反馈（Obsidian `Doclite v 0.8.4问题_20261116.md`）。
+
+- **R-128（控制条让路，已修）**：上轮 R-120 只给「目录面板」标了 data-toc-panel，用户实际点不到的是「目录/章节/上一章/下一章」**控制条**——本轮给控制条与目录面板都标 `data-immersive-guard`，App 让路选择器统一为 `[data-toc-panel],[data-immersive-guard]`（展开态命中栈 / 收起态单数）；同时移除 33ms 节流（会丢掉进入让路区后的最后一个 mousemove，指针停住则悬停不收起）
+- **R-129（顶部紧凑，已修）**：1366×768 下四层横条占比过高——Header py-3→py-2、副标题与主名同行（小屏隐藏）；PreviewToolbar py-2→py-1.5；控制条 py-2→py-1.5、按钮 py-1、gap-2
+- **R-130（菜单名残留，已修）**：v0.8.4 exe FileDescription 已短但 Explorer 缓存旧值——新增 `build/installer.nsh`（customInstall 写 `Applications\DocLite.exe` 的 FriendlyAppName + 广播 SHCNE_ASSOCCHANGED；卸载清理），安装后无需手动重关联
+- **R-131（差量升级，机制说明）**：electron-updater NSIS 差量需本地有上一版安装包缓存做基线；v0.8.3 为手动安装 → v0.8.4 全量属预期。经应用内更新装上 v0.8.4 后，下一版将走差量（V-008 ④）
+- **R-132（L4 环境鲁棒性，已修，顺带）**：swap 满载的 7.6G 机上 printToPDF 稳定红——根因 `disable-gpu + disable-software-rasterizer` 下 viz CopyOutput 共享内存传输失败（`viz.mojom.CopyOutputResultSender` 报错）。修复：GPU 开关仅无显示环境加；printToPDF 失败重试一次；E 段移至 B 段后（md 态内存最低，此前在 D 段后曾 OOM）；探针用后即删
+- 台账：R-128~R-132 + V-008；**冒烟 104/104**（L1 +1：data-immersive-guard 检查）+ verify 无阻塞
+
+
 ### 遗留
 
 - .doc/.ppt 不支持（无纯 JS 渲染库；如需可后续做二进制文本提取，本期按确认不实施）

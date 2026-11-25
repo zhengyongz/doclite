@@ -94,28 +94,27 @@ function AppBody() {
   // （预览区是蒙层的兄弟节点，不在其祖先链上，滚动事件落到蒙层后无处可滚），且光标会变成箭头（workbuddy H1）
   useEffect(() => {
     if (!immersive) return
-    // 展开态命中栈节流（R-124）：elementsFromPoint 构造较贵，贴边拖动 60~120Hz，
-    // 压到 ~30Hz；只节流命中，不影响 setSidebarOpen 与 x 判定、不影响收起态 B-023。
-    let lastTocHit = 0
+    // 让路选择器（B-023/R-120/R-128）：data-toc-panel=目录面板，data-immersive-guard=
+    // 渲染器的交互控制条（如电子书的「目录/章节/上一章/下一章」）。指针悬在这些区域
+    // 上时是用户要操作的内容，侧栏浮层不得弹出/保持遮挡。
+    const GUARD = '[data-toc-panel], [data-immersive-guard]'
     const onMove = (e) => {
       if (e.clientX > window.innerWidth * 0.2) return
       if (sidebarOpenRef.current) {
-        // 展开态：目录面板被侧栏(z-40)盖在下面，单数 elementFromPoint 命中的是
-        // 侧栏自身、拿不到 data-toc-panel——改用命中栈 elementsFromPoint（R-123，
-        // 被遮挡的 toc 仍在栈内）。命中 toc 即收起让位（R-120）。
-        const now = e.timeStamp
-        if (now - lastTocHit < 33) return
-        lastTocHit = now
+        // 展开态：让路目标被侧栏(z-40)盖在下面，单数 elementFromPoint 命中的是
+        // 侧栏自身——改用命中栈 elementsFromPoint（R-123，被遮挡的元素仍在栈内）。
+        // 不做时间戳节流（R-124 复盘）：节流会丢掉进入区域后的最后一个 mousemove，
+        // 指针停住后悬停不收起；命中栈仅在 x≤20% 热区且展开态构造，频率可接受。
         const stack = document.elementsFromPoint(e.clientX, e.clientY)
-        if (stack.some(el => el.closest && el.closest('[data-toc-panel]'))) {
+        if (stack.some(el => el.closest && el.closest(GUARD))) {
           cancelHide()
           setSidebarOpen(false)
         }
         return
       }
-      // 收起态：目录未被遮挡，单数命中即可（B-023 让路），省一次栈构造
+      // 收起态：目标未被遮挡，单数命中即可（B-023 让路），省一次栈构造
       const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (el && el.closest && el.closest('[data-toc-panel]')) return
+      if (el && el.closest && el.closest(GUARD)) return
       cancelHide()
       setSidebarOpen(true)
     }
